@@ -1,0 +1,2 @@
+# hadesd
+A personal daemon.
