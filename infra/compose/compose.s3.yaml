@@ -1,0 +1,8 @@
+# Optional overlay: combine after compose.yaml when the backend needs an external S3 endpoint.
+# The default deployment keeps backend/Worker on the internal network.
+services:
+  backend:
+    environment:
+      STORAGE_MODE: s3
+      S3_BUCKET: ${S3_BUCKET:?required for the S3 overlay}
+    networks: [private, edge]

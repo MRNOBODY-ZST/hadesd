@@ -1,0 +1,35 @@
+{
+  "name": "hadesd",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.10.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @hadesd/web dev",
+    "dev:admin": "pnpm --filter @hadesd/admin dev",
+    "build": "pnpm --filter @hadesd/web build && pnpm --filter @hadesd/admin build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:e2e": "playwright test",
+    "publisher": "node --env-file=.env apps/publisher/src/worker.mjs",
+    "serve": "node --env-file=.env scripts/serve-local.mjs",
+    "setup": "node scripts/setup.mjs",
+    "demo": "node --env-file=.env scripts/demo.mjs",
+    "backup": "node --env-file=.env scripts/backup.mjs",
+    "restore:drill": "node --env-file=.env scripts/restore-drill.mjs",
+    "test:fault": "node --env-file=.env scripts/fault-check.mjs",
+    "backend:build": "node --env-file=.env scripts/backend.mjs build",
+    "backend:test": "node --env-file=.env scripts/backend.mjs test",
+    "backend": "node --env-file=.env scripts/backend.mjs run",
+    "bootstrap": "node --env-file=.env scripts/backend.mjs bootstrap",
+    "deps:up": "docker compose --env-file .env -f infra/compose/dependencies.yaml up -d --wait",
+    "media:cleanup": "node --env-file=.env scripts/backend.mjs cleanup"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.5.0"
+  }
+}

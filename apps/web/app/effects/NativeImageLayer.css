@@ -1,0 +1,21 @@
+.stage-native-images {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+.stage-native-image-clip {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+.stage-native-image-clip > img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}

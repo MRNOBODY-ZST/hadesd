@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+.local/
+.env
+.env.*
+!.env.example
+**/build/
+**/dist/
+**/.react-router/
+**/.gradle/
+**/out/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+apps/admin/artifacts/

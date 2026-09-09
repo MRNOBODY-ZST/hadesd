@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
+test('CMS mouse flow writes, uploads, previews, publishes and withdraws real content',async({page,context})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/admin/');await page.getByLabel('用户名',{exact:true}).fill(process.env.ADMIN_BOOTSTRAP_USERNAME||'hades');await page.getByLabel('密码',{exact:true}).fill((await readFile(process.env.ADMIN_BOOTSTRAP_PASSWORD_FILE!,'utf8')).trim());await page.getByRole('button',{name:'进入写作台 →'}).click();
+ await expect(page.getByRole('heading',{name:'内容手记',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'＋ 新建内容',exact:true}).click();
+ const title='示例验收 · 纯鼠标写作与发布';const slug='qa-mouse-'+Date.now();
+ await page.getByLabel('标题',{exact:true}).fill(title);await page.getByLabel('永久链接标识',{exact:true}).fill(slug);await page.getByRole('button',{name:'创建并开始写作 →',exact:true}).click();
+ await page.getByLabel('内容摘要',{exact:true}).fill('明确标记的本地自动化验收内容，测试结束后撤稿。');
+ await page.getByLabel('MARKDOWN',{exact:true}).fill('## 从写作台到公开站点\n\n这段文字通过真实后台编辑、持久化和发布。\n\n```java\nreturn Mono.just("hadesd");\n```');
+ await expect(page.getByRole('status').filter({hasText:'已保存'}).first()).toBeVisible();
+ const editorUrl=page.url();await page.getByRole('button',{name:'媒体',exact:true}).click();
+ const fixture=await page.screenshot({clip:{x:0,y:0,width:4,height:4}});
+ await page.getByLabel('上传媒体文件').setInputFiles({name:slug+'.png',mimeType:'image/png',buffer:fixture});
+ await expect(page.getByText(new RegExp(`已上传 ${slug}`))).toBeVisible();
+ const file=page.locator('article').filter({has:page.getByRole('heading',{name:slug+'.png',exact:true})});await file.getByRole('button',{name:'插入正文',exact:true}).click();await expect(page.getByLabel('MARKDOWN',{exact:true})).toHaveValue(/\/api\/v1\/public\/media\//);await expect(page.getByRole('status').filter({hasText:'已保存'}).first()).toBeVisible();
+ await page.getByRole('button',{name:'预览',exact:true}).click();await expect(page.getByRole('region',{name:'私有 Markdown 预览'}).getByText('这段文字通过真实后台编辑、持久化和发布。',{exact:true})).toBeVisible();await page.screenshot({path:'.local/reports/screenshots/admin-publish-preview.png',fullPage:true});
+ await page.getByRole('button',{name:'发布 ↗',exact:true}).click();await expect(page.getByLabel('本次发布的修订')).not.toHaveValue('');await page.getByRole('button',{name:'确认发布此修订',exact:true}).click();await expect(page.getByText('已上线',{exact:true})).toBeVisible({timeout:120000});
+ const reader=await context.newPage();await reader.goto('/posts/'+slug);await expect(reader.locator('.terminal-stage')).toHaveAttribute('data-renderer',/^(WebGPU|WebGL2|DOM)$/,{timeout:35000});if(await reader.locator('.terminal-stage').getAttribute('data-stage-ready')!=='true')await reader.getByRole('button',{name:'跳过片头，进入终端',exact:true}).click();await expect(reader.locator('.terminal-stage')).toHaveAttribute('data-stage-ready','true',{timeout:35000});await expect(reader.getByRole('heading',{name:title,exact:true})).toBeVisible();await expect(reader.getByText('这段文字通过真实后台编辑、持久化和发布。',{exact:true})).toBeVisible();expect(await reader.getByRole('img',{name:slug+'.png'}).evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);await reader.screenshot({path:'.local/reports/screenshots/admin-published-article.png',fullPage:true});await reader.close();
+ await page.getByRole('button',{name:'属性',exact:true}).click();await page.getByRole('button',{name:'收起发布状态'}).click();page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'从公开站点撤稿',exact:true}).click();await expect(page.getByText('已上线',{exact:true})).toBeVisible({timeout:120000});expect((await page.request.get('/posts/'+slug)).status()).toBe(404);expect(errors).toEqual([]);
+});

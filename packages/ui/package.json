@@ -1,0 +1,21 @@
+{
+  "name": "@hadesd/ui",
+  "exports": {
+    ".": "./src/index.tsx",
+    "./tokens.css": "./src/tokens.css",
+    "./crt.css": "./src/crt.css"
+  },
+  "dependencies": {
+    "react": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "7.0.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "private": true,
+  "type": "module",
+  "version": "0.1.0"
+}

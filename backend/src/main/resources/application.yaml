@@ -1,0 +1,48 @@
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${SERVER_PORT:18080}
+  reactive:
+    session:
+      timeout: 30m
+spring:
+  application:
+    name: hadesd
+  main:
+    web-application-type: reactive
+  r2dbc:
+    url: r2dbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:13306}/${DB_NAME:hadesd}?serverZoneId=UTC
+    username: ${DB_USERNAME:hadesd}
+    password: ${DB_PASSWORD:}
+    pool:
+      initial-size: 1
+      max-size: 16
+      max-acquire-time: 5s
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      connect-timeout: 2s
+  session:
+    timeout: 30m
+  http:
+    codecs:
+      max-in-memory-size: 3MB
+  webflux:
+    multipart:
+      max-in-memory-size: 256KB
+      max-disk-usage-per-part: 26MB
+      max-parts: 2
+hades:
+  jdbc-url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:13306}/${DB_NAME:hadesd}?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+  worker-token: ${WORKER_TOKEN:}
+  release-root: ${RELEASE_ROOT:../.local/published}
+  media-root: ${MEDIA_ROOT:../.local/media}
+  storage-mode: ${STORAGE_MODE:local}
+  session-secure: ${SESSION_SECURE:false}
+  s3:
+    bucket: ${S3_BUCKET:}
+    region: ${S3_REGION:us-east-1}
+    endpoint: ${S3_ENDPOINT:}
+    path-style: ${S3_PATH_STYLE:false}

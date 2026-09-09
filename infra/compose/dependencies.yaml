@@ -1,0 +1,37 @@
+name: hadesd-local
+services:
+  mysql:
+    image: mysql:8.4.11
+    command: ["--ngram-token-size=2", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-hadesd}
+      MYSQL_USER: ${DB_USERNAME:-hadesd}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?run pnpm setup}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?run pnpm setup}
+    ports: ["127.0.0.1:${DB_PORT:-23306}:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    mem_limit: 1g
+    restart: unless-stopped
+  redis:
+    user: redis
+    image: redis:8.4.6
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?run pnpm setup}
+    ports: ["127.0.0.1:${REDIS_PORT:-26379}:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+    restart: unless-stopped
+volumes:
+  mysql-data:
+  redis-data:

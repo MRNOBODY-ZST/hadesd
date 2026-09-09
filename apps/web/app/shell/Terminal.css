@@ -1,0 +1,31 @@
+.terminal .terminal-completions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 12;
+  width: min(420px, 100%);
+  margin-bottom: 8px;
+  padding: 7px;
+  border: 1px solid var(--accent);
+  background: var(--bg-screen);
+}
+.terminal .completion-caption {
+  margin: 0 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+.terminal .completion-menu {
+  position: static;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+}
+.terminal .completion-menu button {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 22px;
+}

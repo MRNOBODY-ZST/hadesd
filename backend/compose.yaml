@@ -1,0 +1,4 @@
+# The daemon template services were replaced by the shared MySQL/Redis deployment.
+# From repository root: docker compose --env-file .env -f infra/compose/dependencies.yaml up -d
+include:
+  - path: ../infra/compose/dependencies.yaml

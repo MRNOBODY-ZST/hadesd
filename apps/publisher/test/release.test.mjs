@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { activateRelease, currentRelease, prepareRelease, secureHtml, pruneExpiredReleases, snapshotRoutes, validRoute } from '../src/release.mjs';
+const empty = id => ({releaseId:id,createdAt:'2026-09-09T00:00:00Z',site:{title:'HADESD',tagline:'a personal daemon.'},contents:[]});
+async function build(root,snapshot){const dir=path.join(root,'build-'+snapshot.releaseId);for(const route of snapshotRoutes(snapshot)){const p=path.join(dir,decodeURIComponent(route));await mkdir(p,{recursive:true});await writeFile(path.join(p,'index.html'),'<html><head><script>window.boot=1</script></head><body>正文</body></html>');}await mkdir(path.join(dir,'assets'));await writeFile(path.join(dir,'assets','app-AbC123.js'),'export {}');return dir;}
+test('reject path traversal, encoded traversal and admin namespace',()=>{for(const route of ['/posts/../admin','/posts/%2e%2e','/admin','/posts/a%2fb','//posts/x','/posts/%00']) assert.throws(()=>validRoute(route));assert.equal(validRoute('/tags/%E4%B8%AD%E6%96%87'),'/tags/%E4%B8%AD%E6%96%87');});
+test('CSP grants only actual inline script hashes, never unsafe-eval',()=>{const secured=secureHtml('<html><head><script>x()</script><script src="/a.js"></script></head></html>');assert.match(secured,/sha256-/);assert.doesNotMatch(secured,/unsafe-eval/);assert.match(secured,/Content-Security-Policy/);});
+test('failed build validation leaves old pointer; atomic switch, retry and rollback are real filesystem operations',async()=>{const root=await mkdtemp(path.join(os.tmpdir(),'hadesd-release-'));try{
+const a=empty('release-a');await prepareRelease({root,buildClient:await build(root,a),snapshot:a,origin:'https://hadesd.sh'});await activateRelease(root,a.releaseId);assert.equal(await currentRelease(root),'release-a');
+const b=empty('release-b');const buildB=await build(root,b);await rm(path.join(buildB,'posts','index.html'));await assert.rejects(prepareRelease({root,buildClient:buildB,snapshot:b,origin:'https://hadesd.sh'}),/Missing prerendered/);assert.equal(await currentRelease(root),'release-a');
+await writeFile(path.join(buildB,'posts','index.html'),'<html><head></head><body>目录</body></html>');await prepareRelease({root,buildClient:buildB,snapshot:b,origin:'https://hadesd.sh'});await activateRelease(root,'release-b');await activateRelease(root,'release-b');assert.equal(await currentRelease(root),'release-b');await activateRelease(root,'release-a');assert.equal(await currentRelease(root),'release-a');assert.equal((await stat(path.join(root,'assets','app-AbC123.js'))).isFile(),true);assert.match(await readFile(path.join(root,'current','site','rss.xml'),'utf8'),/<rss/);
+}finally{await rm(root,{recursive:true,force:true});}});
+test('duplicate content public routes prevent publication',()=>{assert.throws(()=>snapshotRoutes({...empty('duplicate'),contents:[{route:'/posts/x',tags:[]},{route:'/posts/x',tags:[]}]}),/Duplicate/);});
+
+test('retention protects active release even when given an expired list containing it',async()=>{const root=await mkdtemp(path.join(os.tmpdir(),'hadesd-retention-'));try{for(const id of ['old','active']){const s=empty(id);await prepareRelease({root,buildClient:await build(root,s),snapshot:s,origin:'https://hadesd.sh'});await activateRelease(root,id);}assert.equal(await pruneExpiredReleases(root,['old','active']),1);assert.equal(await currentRelease(root),'active');await assert.rejects(stat(path.join(root,'releases','old')));assert.equal(await pruneExpiredReleases(root,['old']),0);}finally{await rm(root,{recursive:true,force:true});}});

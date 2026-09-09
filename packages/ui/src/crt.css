@@ -1,0 +1,35 @@
+/* The glass sits above every route, overlay and 3D scene. It never intercepts input. */
+.system-crt-glass {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  pointer-events: none;
+  contain: strict;
+  background:
+    repeating-linear-gradient(0deg, #0000 0 2px, #00000018 2px 3px),
+    repeating-linear-gradient(90deg, #ff310004 0 1px, #40ff8003 1px 2px, #4060ff06 2px 3px);
+  box-shadow: inset 0 0 9vw 1vw #0007, inset 0 0 0 1px #a9c3c81a;
+}
+.system-crt-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #aaffdf00 45%, #aaffdf06 49.7%, #aaffdf00 51%);
+  background-size: 100% 220%;
+  animation: system-crt-scan 14s linear infinite;
+}
+@keyframes system-crt-scan { from { background-position: 0 200%; } to { background-position: 0 -200%; } }
+html:not([data-crt="off"]):not([data-theme="paper"]):not([data-reader="true"]) :is(.stage-hero, .stage-masthead, .stage-base, .stage-scroll-hint, .stage-skip, [role="dialog"]) {
+  text-shadow: .55px 0 #fc88795c, -.55px 0 #82c9ff6b;
+}
+html[data-crt="low"] .system-crt-glass { opacity: .48; }
+html[data-crt="low"] .system-crt-glass::after { animation: none; }
+html[data-crt="off"] .system-crt-glass,
+html[data-theme="paper"] .system-crt-glass,
+html[data-reader="true"] .system-crt-glass { display: none; }
+/* Keep the canvas exposed during adapter acquisition. Chromium can suspend
+   WebGPU initialization underneath a full-viewport composited glass layer. */
+body:has(.terminal-stage[data-renderer="initializing"]) .system-crt-glass { display: none; }
+.system-crt-glass--admin { opacity: .45; box-shadow: inset 0 0 8vw #1d382f30; }
+@media (prefers-reduced-motion: reduce) { .system-crt-glass::after { animation: none; } }
+@media print { .system-crt-glass { display: none; } }

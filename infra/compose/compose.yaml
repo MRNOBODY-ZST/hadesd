@@ -1,0 +1,130 @@
+name: hadesd
+services:
+  mysql:
+    image: mysql:8.4.11@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    command: ["--ngram-token-size=2", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-hadesd}
+      MYSQL_USER: ${DB_USERNAME:-hadesd}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?required}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+    volumes: ["mysql-data:/var/lib/mysql"]
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    mem_limit: 1g
+    restart: unless-stopped
+  redis:
+    user: redis
+    image: redis:8.4.6@sha256:8df317692c59703c19ecfa90a8cb17703089f3c8e12c2bd0cd6b3c31005e69d8
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    volumes: ["redis-data:/data"]
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+    restart: unless-stopped
+  backend:
+    image: hadesd/backend:1.0.0
+    build:
+      context: ../..
+      dockerfile: infra/compose/Backend.Dockerfile
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-hadesd}
+      DB_USERNAME: ${DB_USERNAME:-hadesd}
+      DB_PASSWORD: ${DB_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+      SERVER_PORT: 8080
+      SERVER_ADDRESS: 0.0.0.0
+      WORKER_TOKEN: ${WORKER_TOKEN:?required}
+      RELEASE_ROOT: /srv/published
+      MEDIA_ROOT: /srv/media
+      SESSION_SECURE: ${SESSION_SECURE:-true}
+      STORAGE_MODE: ${STORAGE_MODE:-local}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PATH_STYLE: ${S3_PATH_STYLE:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-hades}
+      ADMIN_BOOTSTRAP_PASSWORD_FILE: /run/secrets/admin-password
+    volumes:
+      - ${RELEASE_ROOT:?run setup}:/srv/published:ro
+      - ${MEDIA_ROOT:?run setup}:/srv/media
+      - ${ADMIN_BOOTSTRAP_PASSWORD_FILE:?run setup}:/run/secrets/admin-password:ro
+    networks: [private]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    mem_limit: 768m
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  publisher:
+    image: hadesd/publisher:1.0.0
+    build:
+      context: ../..
+      dockerfile: infra/compose/Publisher.Dockerfile
+    environment:
+      API_ORIGIN: http://backend:8080
+      WORKER_TOKEN: ${WORKER_TOKEN:?required}
+      RELEASE_ROOT: /srv/published
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://hadesd.sh}
+      WORKER_POLL_MS: 3000
+    volumes: ["${RELEASE_ROOT:?run setup}:/srv/published"]
+    networks: [private]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "Promise.all([fetch(new URL('/health',process.env.API_ORIGIN),{signal:AbortSignal.timeout(4000)}).then(r=>{if(!r.ok)throw Error('backend unavailable')}),import('node:fs/promises').then(fs=>fs.access(process.env.RELEASE_ROOT,3))]).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    mem_limit: 2g
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  nginx:
+    image: hadesd/nginx:1.0.0
+    build:
+      context: ../..
+      dockerfile: infra/compose/Nginx.Dockerfile
+    ports: ["127.0.0.1:${LOCAL_PORT:-18088}:8080"]
+    volumes: ["${RELEASE_ROOT:?run setup}:/srv/published:ro"]
+    networks: [private, edge]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/admin/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    mem_limit: 128m
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+networks:
+  private: {internal: true}
+  edge: {}
+volumes:
+  mysql-data:
+  redis-data:

@@ -1,0 +1,17 @@
+[Unit]
+Description=HADESD blog over WireGuard
+Wants=network-online.target
+Requires=docker.service wg-quick@wg-hades.service
+After=network-online.target docker.service wg-quick@wg-hades.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/hadesd/app
+ExecStart=/usr/local/sbin/hadesd-compose up -d --wait --pull never --wait-timeout 240
+ExecStop=/usr/local/sbin/hadesd-compose stop
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

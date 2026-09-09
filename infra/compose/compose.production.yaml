@@ -1,0 +1,26 @@
+# Combine after compose.yaml. Requires Docker Compose >= 2.24.4 for !override.
+# Use an explicit production env file and absolute host paths.
+# The supplied nginx config must sanitize both Forwarded and X-Forwarded-* and
+# trust only the VPS WireGuard peer before backend forwarded-header handling is enabled.
+services:
+  backend:
+    environment:
+      SESSION_SECURE: "true"
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+  publisher:
+    # SSR/prerender also consumes native Rolldown memory outside the Node heap.
+    # Keep the heap below the total limit; defaults leave 2 GiB for native memory.
+    mem_limit: ${PUBLISHER_MEMORY_LIMIT:-6g}
+    environment:
+      PUBLISHER_BUILD_HEAP_MB: "${PUBLISHER_BUILD_HEAP_MB:-4096}"
+  nginx:
+    # Replace the development loopback binding; never append a wildcard listener.
+    ports: !override
+      - "${WIREGUARD_BIND_IP:?set the LAN server WireGuard IPv4 address}:${LOCAL_PORT:-18088}:8080"
+    volumes:
+      - type: bind
+        source: ${NGINX_CONFIG_FILE:?set an absolute path to the production nginx config}
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
