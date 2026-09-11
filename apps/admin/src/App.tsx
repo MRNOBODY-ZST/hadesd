@@ -5,6 +5,7 @@ import { navigate, readRoute, useUi, type Route } from "./store";
 import { Contents } from "./features/Contents";
 import { JobStatus } from "./features/Publishing";
 import { ErrorNotice, Loading } from "./components/Shared";
+import { ThemePicker } from "./components/ThemePicker";
 import styles from "./styles.module.css";
 const Editor = lazy(() => import("./features/Editor"));
 const MediaLibrary = lazy(() => import("./features/MediaLibrary"));
@@ -56,6 +57,7 @@ function Login({
         <span className={styles.loginFooter}>PRIVATE WORKSPACE / 写作台</span>
       </section>
       <section className={styles.loginFormWrap}>
+        <div className={styles.loginAppearance}><ThemePicker /></div>
         <form
           className={styles.loginForm}
           onSubmit={(e) => {
@@ -206,6 +208,9 @@ export function App() {
             {links.map((link) => (
               <button
                 key={link.view}
+                aria-label={link.label}
+                title={link.label}
+                aria-current={route.view === link.view || (route.view === "editor" && link.view === "contents") ? "page" : undefined}
                 className={
                   route.view === link.view ||
                   (route.view === "editor" && link.view === "contents")
@@ -255,9 +260,10 @@ export function App() {
               HADESD <span className={styles.slash}>/</span>{" "}
               {links.find((l) => l.view === route.view)?.label || "编辑内容"}
             </span>
-            <span className={styles.privateLabel}>
-              <i /> 私有工作空间
-            </span>
+            <div className={styles.topbarActions}>
+              <span className={styles.privateLabel}><i /> 私有工作空间</span>
+              <ThemePicker />
+            </div>
           </div>
           {logout.error && <ErrorNotice error={logout.error} />}
           <JobStatus />

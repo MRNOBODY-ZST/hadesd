@@ -45,8 +45,10 @@ export function JobStatus() {
     if (query.data?.status === "SUCCEEDED") {
       void client.invalidateQueries({ queryKey: ["releases"] });
       void client.invalidateQueries({ queryKey: ["release"] });
+      void client.invalidateQueries({ queryKey: ["media"] });
+      void client.invalidateQueries({ queryKey: ["media-references"] });
     }
-  }, [query.data?.status, client]);
+  }, [query.data?.id, query.data?.status, client]);
   if (!tracked || tracked.id === dismissed) return null;
   const job = query.data;
   return (

@@ -27,10 +27,9 @@ function content(version = 1, markdown = "original"): Content {
     },
   };
 }
-function mount() {
-  const client = new QueryClient({
+function mount(client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  })) {
   return renderHook(() => useRevisionEditor(content()), {
     wrapper: ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -47,6 +46,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("revision editor autosave and conflict safety", () => {
+  it("expires cached media counts and reference details after a saved revision changes attachments", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15000 }, mutations: { retry: false } } });
+    client.setQueryData(["media", 0, 20, "", "all", "all"], { items: [{ id: "media-1", referenceCount: 0, canDelete: true }], total: 1 });
+    client.setQueryData(["media-references", "media-1", 0], { items: [], total: 0 });
+    vi.spyOn(api, "save").mockImplementation(async (_id, version, revision) => ({ ...content(version + 1), latestRevision: { ...content(version + 1).latestRevision, ...revision } }));
+    const { result } = mount(client);
+    act(() => result.current.change(current => ({ ...current, markdown: "![now referenced](/api/v1/public/media/media-1)" })));
+    await act(() => vi.advanceTimersByTimeAsync(1200));
+    expect(result.current.status).toBe("saved");
+    expect(client.getQueryState(["media", 0, 20, "", "all", "all"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["media-references", "media-1", 0])?.isInvalidated).toBe(true);
+  });
   it("debounces edits, saves the latest text, and clears the dirty guard only after confirmation", async () => {
     const save = vi
       .spyOn(api, "save")

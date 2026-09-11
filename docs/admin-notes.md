@@ -2,7 +2,7 @@
 
 ## 范围与入口
 
-独立 React / TypeScript strict / Vite SPA，构建路径 `/admin/`。样式采用 CSS Modules 和 CSS Variables，写作台使用 Paper、墨绿与少量琥珀色。后台与公开站点分开构建，Markdown 编辑器按需加载。
+独立 React / TypeScript strict / Vite SPA，构建路径 `/admin/`。样式采用 CSS Modules 和 CSS Variables，写作台支持纸张手记、石墨夜间、冰川工作台与琥珀终端四套预设。后台与公开站点分开构建，Markdown 编辑器按需加载。
 
 - 本地统一入口：`http://127.0.0.1:18088/admin/`（先按根 README 启动依赖、后端与本地静态服务）。
 - 热更新开发：`pnpm --filter @hadesd/admin dev`，访问 `http://127.0.0.1:5174/admin/`。`/api` 代理至 `API_ORIGIN`，默认 `http://127.0.0.1:28080`。
@@ -11,7 +11,7 @@
 ## 已实现的工作流
 
 1. Session 表单登录。写请求获取并携带 CSRF；登录、退出后重新获取 CSRF。浏览器仅保留 HttpOnly 会话 Cookie，前端不存储认证令牌。401 写响应显示重新登录界面；保留仍挂载的本地编辑器。API 请求 15 秒超时后显示可重试错误。
-2. 文章、项目、研究、页面的分页列表、当前页类型与标题筛选、新建、编辑；PAGE 路径遵从后端只允许 `about` / `now` 的约束。
+2. 文章、项目、研究、页面的分页列表、跨全部记录的类型与标题筛选、新建、编辑、回收站及受保护的永久删除；PAGE 路径遵从后端只允许 `about` / `now` 的约束。
 3. Markdown 编辑 / 分屏 / 私有预览；共用 `@hadesd/markdown` 的 GFM、数学、代码与清洗规则。媒体持久化引用 `/api/v1/public/media/{id}`，预览时映射到鉴权私有接口；不把私有 URL 写入正文。
 4. 1.2 秒 debounce 自动保存，另有“立即保存”。单次只允许一个保存请求在途，保存途中输入的文字会在旧请求完成后使用返回的新版本继续保存。
 5. `version` 乐观锁。`REVISION_CONFLICT` 停止自动保存、保留本地文字，展示服务器文字，支持明确选择载入服务器版本或以当前文字创建新修订。网络失败停止隐式重试，未保存状态继续触发离开保护。
@@ -32,6 +32,10 @@
 ## 锁定版本
 
 React / React DOM 19.2.8；Vite 8.2.2；TypeScript 7.0.2；TanStack Query 5.102.8；Zustand 5.0.15；Vitest 5.0.0；Testing Library React 16.3.3；user-event 14.6.7；jsdom 27.4.0。精确依赖见 `apps/admin/package.json` 和根 `pnpm-lock.yaml`。构建配置与轮询签名核对了 [Vite base 文档](https://vite.dev/config/shared-options.html#base) 与 [TanStack Query useQuery 文档](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery)。
+
+## 最新管理功能
+
+2026-09-12 新增功能和删除语义见 [Admin 外观与资料管理](admin-management.md)，媒体权限与 Cloudflare 缓存区别见 [媒体访问说明](media-delivery.md)。以下保留初版后台的历史验收记录。
 
 ## 实际验证
 

@@ -19,12 +19,6 @@ public class MediaController {
     this.releases = releases;
   }
 
-  @GetMapping("/api/v1/admin/media")
-  Mono<Page<Media>> list(
-      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-    return media.list(page, size);
-  }
-
   @PostMapping(value = "/api/v1/admin/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @ResponseStatus(HttpStatus.CREATED)
   Mono<Media> upload(@RequestPart("file") FilePart file) {

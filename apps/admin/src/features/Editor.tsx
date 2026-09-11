@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Markdown } from "@hadesd/markdown";
 import type { Content, Revision, RevisionInput } from "@hadesd/contracts";
 import { api, privateMediaUrl } from "../api";
@@ -24,6 +24,7 @@ import { MEDIA_ACCEPT, mediaMarkdown } from "./mediaInsertion";
 import { useMediaInsertion } from "./useMediaInsertion";
 import attachmentStyles from "./EditorAttachments.module.css";
 import styles from "../styles.module.css";
+import management from "./Management.module.css";
 const saveLabels: Record<SaveStatus, string> = {
   saved: "已保存",
   dirty: "未保存",
@@ -41,11 +42,28 @@ export default function Editor({ contentId }: { contentId: string }) {
     return (
       <ErrorNotice error={content.error} retry={() => void content.refetch()} />
     );
-  return <WritingDesk initial={content.data} />;
+  return content.data.deletedAt ? <ArchivedDocument content={content.data} /> : <WritingDesk initial={content.data} />;
+}
+function ArchivedDocument({ content }: { content: Content }) {
+  const client = useQueryClient();
+  const restore = useMutation({ mutationFn: () => api.restoreContent(content.id, content.version), onSuccess: restored => {
+    client.setQueryData(["content", content.id], restored);
+    void client.invalidateQueries({ queryKey: ["contents"] });
+    void client.invalidateQueries({ queryKey: ["media"] });
+    void client.invalidateQueries({ queryKey: ["media-references"] });
+  }, onError: () => { void client.invalidateQueries({ queryKey: ["content", content.id] }); } });
+  return <section className={management.trashEditor} aria-label="回收站文稿">
+    <p className={styles.eyebrow}>TRASH / PRIVATE MANUSCRIPT</p><h2>{content.latestRevision.title}</h2>
+    <p>这份文稿已移入回收站。正文与历史修订仍保留，恢复后可以继续编辑；恢复不会自动发布。</p>
+    <div className={management.confirmActions}><button onClick={() => navigate({ view: "contents" })}>返回内容列表</button><button className={styles.primary} disabled={restore.isPending} onClick={() => restore.mutate()}>{restore.isPending ? "恢复中…" : "恢复并继续编辑"}</button></div>
+    {restore.error && <ErrorNotice error={restore.error} />}
+    <Markdown source={content.latestRevision.markdown} mediaUrl={privateMediaUrl} />
+  </section>;
 }
 function WritingDesk({ initial }: { initial: Content }) {
   const [pendingAttachments, setPendingAttachments] = useState(0);
-  const editor = useRevisionEditor(initial, pendingAttachments);
+  const [pendingLibraryFiles, setPendingLibraryFiles] = useState(0);
+  const editor = useRevisionEditor(initial, pendingAttachments + pendingLibraryFiles);
   const { draft, change, content, status, dirty } = editor;
   const [mode, setMode] = useState<"write" | "split" | "preview">("split");
   const [inspector, setInspector] = useState<"details" | "history" | "media">(
@@ -134,7 +152,7 @@ function WritingDesk({ initial }: { initial: Content }) {
             {saveLabels[status]}
           </span>
           <button
-            disabled={status === "saving" || !dirty || status === "conflict" || attachments.pending > 0}
+            disabled={status === "saving" || !dirty || status === "conflict" || attachments.pending > 0 || pendingLibraryFiles > 0}
             onClick={() => void editor.save()}
           >
             立即保存
@@ -145,7 +163,7 @@ function WritingDesk({ initial }: { initial: Content }) {
               dirty ||
               status === "saving" ||
               status === "conflict" ||
-              publish.isPending || attachments.pending > 0
+              publish.isPending || attachments.pending > 0 || pendingLibraryFiles > 0
             }
             onClick={() => setPublishConfirm(!publishConfirm)}
           >
@@ -227,7 +245,7 @@ function WritingDesk({ initial }: { initial: Content }) {
             <button onClick={() => setPublishConfirm(false)}>取消</button>
             <button
               className={styles.primary}
-              disabled={dirty || status === "saving" || publish.isPending || attachments.pending > 0}
+              disabled={dirty || status === "saving" || publish.isPending || attachments.pending > 0 || pendingLibraryFiles > 0}
               onClick={() =>
                 publish.mutate(
                   {
@@ -547,6 +565,8 @@ function WritingDesk({ initial }: { initial: Content }) {
                 >
                   从公开站点撤稿
                 </button>
+                <p>需要删除文稿时，可回到内容列表移入回收站；草稿和历史修订仍可恢复。</p>
+                <button onClick={() => navigate({ view: "contents" })}>返回列表整理文稿</button>
               </div>
             </div>
           )}
@@ -597,6 +617,7 @@ function WritingDesk({ initial }: { initial: Content }) {
             <div className={styles.inspectorBody}>
               <MediaLibrary
                 compact
+                onPending={setPendingLibraryFiles}
                 onInsert={(media) =>
                   insertMarkdown(
                     mediaMarkdown(media),
@@ -654,7 +675,7 @@ function WritingDesk({ initial }: { initial: Content }) {
               <p>恢复此版本将创建新修订。</p>
               <button
                 className={styles.primary}
-                disabled={status === "saving" || attachments.pending > 0}
+                disabled={status === "saving" || attachments.pending > 0 || pendingLibraryFiles > 0}
                 onClick={() => void restoreRevision()}
               >
                 恢复为新修订

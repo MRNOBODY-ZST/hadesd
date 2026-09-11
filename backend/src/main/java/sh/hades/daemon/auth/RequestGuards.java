@@ -48,12 +48,19 @@ public class RequestGuards implements WebFilter {
     else if (path.equals("/api/v1/auth/register") && write) max = 5;
     else if (path.equals("/api/v1/account/password") && write) max = 5;
     else if (path.equals("/api/v1/public/search")) max = 60;
-    else if ((path.equals("/api/v1/admin/media") || path.equals("/api/v1/account/files")) && write) max = 20;
+    else if (sh.hades.daemon.media.PublicMediaGuard.isPublicMedia(path)) {
+      max = 240;
+      bucket = "public-media";
+    }
+    else if (path.equals("/api/v1/admin/media") && write) max = 60;
+    else if (path.equals("/api/v1/account/files") && write) max = 20;
     else if (write && (path.matches("/api/v1/public/contents/[^/]+/comments") || path.startsWith("/api/v1/account/comments"))) {
       max = 20;
       bucket = "comment-write";
     }
     final int limit = max;
+    final String rateBucket = bucket;
+    final boolean publicRead = path.equals("/api/v1/public/search") || rateBucket.equals("public-media");
     if (max == 0) return chain.filter(ex);
     var remote = ex.getRequest().getRemoteAddress();
     // ForwardedHeaderTransformer deliberately keeps addresses unresolved to avoid DNS.
@@ -66,12 +73,12 @@ public class RequestGuards implements WebFilter {
         .timeout(java.time.Duration.ofSeconds(2))
         .onErrorResume(
             e ->
-                path.equals("/api/v1/public/search")
+                publicRead
                     ? Mono.just(-1L)
                     : Mono.error(new Problem(503, "SESSION_UNAVAILABLE", "会话或限流服务暂不可用")))
         .flatMap(
             n -> {
-              if (n < 0) return fallback(ex, chain, peer);
+              if (n < 0) return fallback(ex, chain, rateBucket + ":" + peer, rateBucket.equals("public-media") ? 60 : 20);
               if (n > limit) {
                 ex.getResponse().getHeaders().set("Retry-After", "60");
                 return Errors.write(ex, new Problem(429, "RATE_LIMITED", "请求过于频繁，请稍后重试"), json);
@@ -80,7 +87,7 @@ public class RequestGuards implements WebFilter {
             });
   }
 
-  private Mono<Void> fallback(ServerWebExchange ex, WebFilterChain chain, String peer) {
+  private Mono<Void> fallback(ServerWebExchange ex, WebFilterChain chain, String peer, int limit) {
     long window = Instant.now().getEpochSecond() / 60;
     synchronized (fallback) {
       if (fallbackWindow != window) {
@@ -89,11 +96,11 @@ public class RequestGuards implements WebFilter {
       }
     }
     if (fallback.size() >= 2048 && !fallback.containsKey(peer))
-      return Errors.write(ex, new Problem(429, "RATE_LIMITED", "搜索暂时繁忙，请稍后重试"), json);
+      return Errors.write(ex, new Problem(429, "RATE_LIMITED", "服务暂时繁忙，请稍后重试"), json);
     if (fallback
             .computeIfAbsent(peer, k -> new java.util.concurrent.atomic.AtomicInteger())
             .incrementAndGet()
-        > 20) return Errors.write(ex, new Problem(429, "RATE_LIMITED", "搜索降级期间请降低请求频率"), json);
+        > limit) return Errors.write(ex, new Problem(429, "RATE_LIMITED", "服务降级期间请降低请求频率"), json);
     return chain.filter(ex);
   }
 }

@@ -8,6 +8,30 @@ const response = (value: unknown, status = 200) =>
 beforeEach(() => vi.resetModules());
 afterEach(() => vi.unstubAllGlobals());
 describe("session and CSRF request contract", () => {
+  it("encodes server filters and carries version/CSRF guards through recycle, restore, purge and batch media deletion", async () => {
+    const fetcher = vi.fn(async (url: string) => url.endsWith("/auth/csrf") ? response({ token: "management-csrf", headerName: "X-CSRF-TOKEN" }) : response({ items: [], results: [] }));
+    vi.stubGlobal("fetch", fetcher);
+    const { api } = await import("./api");
+    await api.contents(2, { q: "笔记 & draft", type: "POST", trash: true });
+    await api.media(1, { q: "a&b.png", size: 6, type: "image", referenced: "unused" });
+    const list = new URL(fetcher.mock.calls[0]![0], "https://example.test").searchParams;
+    expect(Object.fromEntries(list)).toEqual({ page: "2", size: "20", q: "笔记 & draft", type: "POST", trash: "true" });
+    const media = new URL(fetcher.mock.calls[1]![0], "https://example.test").searchParams;
+    expect(Object.fromEntries(media)).toEqual({ page: "1", size: "6", q: "a&b.png", type: "image", referenced: "unused" });
+    await api.trashContent("draft/id", 4);
+    await api.restoreContent("draft/id", 5);
+    await api.purgeContent("draft/id", 6);
+    await api.deleteMediaBatch(["media-1", "media-2"], true);
+    const calls = fetcher.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[3]![0]).toBe("/api/v1/admin/contents/draft%2Fid?version=4");
+    expect(calls[3]![1].method).toBe("DELETE");
+    expect(calls[4]![0]).toBe("/api/v1/admin/contents/draft%2Fid/restore");
+    expect(JSON.parse(String(calls[4]![1].body))).toEqual({ version: 5 });
+    expect(calls[5]![0]).toBe("/api/v1/admin/contents/draft%2Fid/purge?version=6");
+    expect(calls[5]![1].method).toBe("DELETE");
+    expect(JSON.parse(String(calls[6]![1].body))).toEqual({ ids: ["media-1", "media-2"], discardUnusedHistory: true });
+    for (const [, options] of calls.slice(3)) expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("management-csrf");
+  });
   it("uses form login, refreshes CSRF after login and logout, and preserves multipart boundaries", async () => {
     const fetcher = vi
       .fn()

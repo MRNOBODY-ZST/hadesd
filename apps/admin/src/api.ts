@@ -13,6 +13,9 @@ import type {
   SiteSettings,
   UserAccount,
   BlogComment,
+  AdminMedia,
+  MediaReference,
+  MediaBatchDeleteResult,
 } from "@hadesd/contracts";
 
 export class ApiError extends Error {
@@ -61,6 +64,7 @@ async function errorFrom(response: Response): Promise<ApiError> {
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+  timeoutMs = 15000,
 ): Promise<T> {
   const method = options.method || "GET";
   const headers = new Headers(options.headers);
@@ -76,8 +80,8 @@ export async function request<T>(
       credentials: "same-origin",
       cache: "no-store",
       signal: options.signal
-        ? AbortSignal.any([options.signal, AbortSignal.timeout(15000)])
-        : AbortSignal.timeout(15000),
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs),
     });
   } catch (failure) {
     throw new Error(
@@ -106,6 +110,13 @@ const json = (method: string, value: unknown): RequestInit => ({
   body: JSON.stringify(value),
 });
 const id = encodeURIComponent;
+export type ContentFilters = { q?: string; type?: ContentType | "all"; trash?: boolean; size?: number };
+export type MediaFilters = { q?: string; type?: "all" | "image" | "text" | "document" | "archive"; referenced?: "all" | "used" | "unused"; size?: number };
+function listing(page: number, filters: Record<string, string | number | boolean | undefined>, defaultSize = 20) {
+  const query = new URLSearchParams({ page: String(page), size: String(filters.size ?? defaultSize) });
+  for (const [key, value] of Object.entries(filters)) if (key !== "size" && value !== undefined && value !== "") query.set(key, String(value));
+  return query.toString();
+}
 export const api = {
   me: () => request<UserAccount>("/auth/me"),
   login: async (username: string, password: string) => {
@@ -122,12 +133,18 @@ export const api = {
     await request<void>("/auth/logout", { method: "POST" });
     await refreshCsrf();
   },
-  contents: (page = 0) =>
-    request<Page<Content>>(`/admin/contents?page=${page}&size=20`),
+  contents: (page = 0, filters: ContentFilters = {}, signal?: AbortSignal) =>
+    request<Page<Content>>(`/admin/contents?${listing(page, filters)}`, { signal }),
   content: (contentId: string) =>
     request<Content>(`/admin/contents/${id(contentId)}`),
   create: (type: ContentType, revision: RevisionInput) =>
     request<Content>("/admin/contents", json("POST", { type, ...revision })),
+  trashContent: (contentId: string, version: number) =>
+    request<void>(`/admin/contents/${id(contentId)}?version=${version}`, { method: "DELETE" }),
+  restoreContent: (contentId: string, version: number) =>
+    request<Content>(`/admin/contents/${id(contentId)}/restore`, json("POST", { version })),
+  purgeContent: (contentId: string, version: number) =>
+    request<void>(`/admin/contents/${id(contentId)}/purge?version=${version}`, { method: "DELETE" }),
   save: (contentId: string, version: number, revision: RevisionInput) =>
     request<Content>(
       `/admin/contents/${id(contentId)}/revisions`,
@@ -141,12 +158,16 @@ export const api = {
     request<Revision>(
       `/admin/contents/${id(contentId)}/revisions/${id(revisionId)}`,
     ),
-  media: (page = 0) =>
-    request<Page<Media>>(`/admin/media?page=${page}&size=20`),
+  media: (page = 0, filters: MediaFilters = {}, signal?: AbortSignal) =>
+    request<Page<AdminMedia>>(`/admin/media?${listing(page, filters)}`, { signal }),
+  mediaReferences: (mediaId: string, page = 0, signal?: AbortSignal) =>
+    request<Page<MediaReference>>(`/admin/media/${id(mediaId)}/references?page=${page}&size=10`, { signal }),
+  deleteMediaBatch: (ids: string[], discardUnusedHistory = false) =>
+    request<MediaBatchDeleteResult>("/admin/media/batch-delete", json("POST", { ids, discardUnusedHistory }), 60000),
   upload: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return request<Media>("/admin/media", { method: "POST", body: form });
+    return request<Media>("/admin/media", { method: "POST", body: form }, 120000);
   },
   deleteMedia: (mediaId: string) =>
     request<void>(`/admin/media/${id(mediaId)}`, { method: "DELETE" }),

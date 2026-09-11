@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ContentType } from "@hadesd/contracts";
+import type { Content, ContentType } from "@hadesd/contracts";
 import { api } from "../api";
 import { navigate } from "../store";
 import {
@@ -13,18 +13,23 @@ import {
   typeNames,
 } from "../components/Shared";
 import styles from "../styles.module.css";
+import management from "./Management.module.css";
+import { useDebouncedSearch } from "./management";
 export function Contents() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<ContentType | "ALL">("ALL");
   const [search, setSearch] = useState("");
+  const query = useDebouncedSearch(search);
+  const [trash, setTrash] = useState(false);
+  const [notice, setNotice] = useState("");
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [type, setType] = useState<ContentType>("POST");
   const client = useQueryClient();
   const contents = useQuery({
-    queryKey: ["contents", page],
-    queryFn: () => api.contents(page),
+    queryKey: ["contents", page, query, filter, trash],
+    queryFn: ({ signal }) => api.contents(page, { q: query, type: filter === "ALL" ? "all" : filter, trash }, signal),
   });
   const create = useMutation({
     mutationFn: () =>
@@ -42,14 +47,23 @@ export function Contents() {
       navigate({ view: "editor", id: content.id });
     },
   });
-  const items =
-    contents.data?.items.filter(
-      (c) =>
-        (filter === "ALL" || c.type === filter) &&
-        `${c.latestRevision.title} ${c.latestRevision.slug}`
-          .toLocaleLowerCase()
-          .includes(search.toLocaleLowerCase()),
-    ) || [];
+  const move = useMutation({
+    mutationFn: async ({ content, action }: { content: Content; action: "restore" | "trash" | "purge" }) => {
+      if (action === "restore") await api.restoreContent(content.id, content.version);
+      else if (action === "purge") await api.purgeContent(content.id, content.version);
+      else await api.trashContent(content.id, content.version);
+    },
+    onSuccess: (_, { content, action }) => {
+      setNotice(action === "restore" ? `「${content.latestRevision.title}」已恢复为私有草稿，尚未上线。` : action === "purge" ? `「${content.latestRevision.title}」及其修订已永久删除。媒体文件仍保留在资料库。` : `「${content.latestRevision.title}」已移入回收站，可随时恢复。`);
+      if (contents.data?.items.length === 1 && page > 0) setPage(page - 1);
+      void client.invalidateQueries({ queryKey: ["contents"] });
+      void client.invalidateQueries({ queryKey: ["content", content.id] });
+      void client.invalidateQueries({ queryKey: ["media"] });
+      void client.invalidateQueries({ queryKey: ["media-references"] });
+    },
+    onError: () => { void client.invalidateQueries({ queryKey: ["contents"] }); },
+  });
+  const items = contents.data?.items || [];
   return (
     <>
       <PageHeading
@@ -57,8 +71,9 @@ export function Contents() {
         title="内容手记"
         description="每一个想法，都值得被好好记录。"
         action={
-          <button
+          !trash && <button
             className={styles.primary}
+            disabled={move.isPending || create.isPending}
             onClick={() => {
               setCreating(!creating);
               create.reset();
@@ -68,6 +83,15 @@ export function Contents() {
           </button>
         }
       />
+      <div className={management.scope}>
+        <div className={management.tabs} aria-label="文稿范围">
+          <button aria-pressed={!trash} disabled={move.isPending || create.isPending} onClick={() => { setTrash(false); setPage(0); move.reset(); }}>文稿</button>
+          <button aria-pressed={trash} disabled={move.isPending || create.isPending} onClick={() => { setTrash(true); setPage(0); setCreating(false); move.reset(); }}>回收站</button>
+        </div>
+        <p>{trash ? "恢复不会自动上线。仅从未发布、无保留版本或评论引用的文稿可永久删除。" : "已上线的内容须先撤稿，随后才能移入回收站。"}</p>
+      </div>
+      {notice && <p className={styles.successNote} role="status">{notice}</p>}
+      {move.error && <ErrorNotice error={move.error} />}
       {creating && (
         <form
           className={styles.createForm}
@@ -148,7 +172,7 @@ export function Contents() {
               aria-pressed={filter === value}
               className={filter === value ? styles.tabActive : ""}
               key={value}
-              onClick={() => setFilter(value)}
+              onClick={() => { setFilter(value); setPage(0); }}
             >
               {label}
             </button>
@@ -158,10 +182,10 @@ export function Contents() {
           <span aria-hidden="true">⌕</span>
           <input
             type="search"
-            aria-label="筛选当前页内容"
-            placeholder="筛选当前页标题或链接…"
+            aria-label="搜索全部文稿"
+            placeholder="搜索标题或链接…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           />
         </label>
       </div>
@@ -176,28 +200,28 @@ export function Contents() {
         <Empty
           title={
             search || filter !== "ALL"
-              ? "当前页没有匹配的记录"
-              : "空白，是一个好的开始。"
+              ? "没有匹配的记录"
+              : trash ? "回收站是空的" : "空白，是一个好的开始。"
           }
         >
           {search || filter !== "ALL"
-            ? "调整筛选条件，或切换分页寻找其他记录。"
-            : "新建一篇文章、一个项目或一份研究。保存的草稿仅你可见，发布后才会来到公开站点。"}
+            ? "调整筛选条件，搜索会覆盖全部记录。"
+            : trash ? "移入回收站的文稿会保留在这里，直到你恢复它。" : "新建一篇文章、一个项目或一份研究。保存的草稿仅你可见，发布后才会来到公开站点。"}
         </Empty>
       ) : (
         <div className={styles.contentList}>
-          <div className={styles.listHeader}>
+          <div className={`${styles.listHeader} ${management.contentRow}`}>
             <span>标题 / 内容</span>
             <span>最近保存</span>
             <span>修订</span>
+            <span>操作</span>
           </div>
           {items.map((c) => (
-            <button
-              className={styles.contentRow}
+            <article
+              className={`${styles.contentRow} ${management.contentRow}`}
               key={c.id}
-              onClick={() => navigate({ view: "editor", id: c.id })}
             >
-              <div className={styles.rowMain}>
+              <button className={`${styles.rowMain} ${management.contentOpen}`} onClick={() => navigate({ view: "editor", id: c.id })}>
                 <span className={styles.fileIcon} aria-hidden="true">
                   {c.type === "PROJECT"
                     ? "◇"
@@ -218,7 +242,7 @@ export function Contents() {
                     ))}
                   </p>
                 </div>
-              </div>
+              </button>
               <time dateTime={c.latestRevision.createdAt}>
                 {dateTime(c.latestRevision.createdAt)}
               </time>
@@ -226,7 +250,19 @@ export function Contents() {
                 v{c.version}
                 <span>→</span>
               </span>
-            </button>
+              <div className={management.rowActions}>
+                <button className={trash ? "" : management.danger} disabled={move.isPending || contents.isFetching} onClick={() => {
+                  move.reset(); setNotice("");
+                  if (!trash && !window.confirm(`将「${c.latestRevision.title}」移入回收站？草稿和历史修订会保留。已上线的内容需要先撤稿。`)) return;
+                  move.mutate({ content: c, action: trash ? "restore" : "trash" });
+                }}>{trash ? "恢复文稿" : "移入回收站"}</button>
+                {trash && <button className={management.danger} disabled={move.isPending || contents.isFetching} onClick={() => {
+                  move.reset(); setNotice("");
+                  if (!window.confirm(`永久删除「${c.latestRevision.title}」？文稿及全部历史修订将不可恢复。媒体文件仍保留在资料库，可随后清理。曾发布或仍有评论、保留版本引用的文稿不能永久删除。`)) return;
+                  move.mutate({ content: c, action: "purge" });
+                }}>永久删除</button>}
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -234,7 +270,7 @@ export function Contents() {
         <Pagination
           page={page}
           total={contents.data.total}
-          size={20}
+          size={contents.data.size}
           onChange={setPage}
         />
       )}

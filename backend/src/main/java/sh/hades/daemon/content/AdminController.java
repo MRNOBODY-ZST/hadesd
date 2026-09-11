@@ -24,8 +24,10 @@ public class AdminController {
 
   @GetMapping("/contents")
   Mono<Page<Content>> list(
-      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-    return contents.list(page, size);
+      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size,
+      @RequestParam(defaultValue = "") String q, @RequestParam(defaultValue = "all") String type,
+      @RequestParam(defaultValue = "false") boolean trash) {
+    return contents.list(page, size, q, type, trash);
   }
 
   @PostMapping("/contents")
@@ -37,6 +39,23 @@ public class AdminController {
   @GetMapping("/contents/{id}")
   Mono<Content> get(@PathVariable String id) {
     return contents.get(id);
+  }
+
+  @DeleteMapping("/contents/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  Mono<Void> delete(@PathVariable String id, @RequestParam long version) {
+    return contents.delete(id, version);
+  }
+
+  @DeleteMapping("/contents/{id}/purge")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  Mono<Void> purge(@PathVariable String id,@RequestParam long version) {
+    return contents.purge(id,version);
+  }
+
+  @PostMapping("/contents/{id}/restore")
+  Mono<Content> restore(@PathVariable String id, @Valid @RequestBody ContentVersion input) {
+    return contents.restore(id, input.version());
   }
 
   @PostMapping("/contents/{id}/revisions")

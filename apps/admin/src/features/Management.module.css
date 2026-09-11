@@ -1,0 +1,71 @@
+.toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 18px 0; }
+.toolbar label { flex: 1 1 140px; min-width: 0; font-size: 12px; }
+.toolbar .search { flex: 2 1 220px; }
+.toolbar input, .toolbar select { width: 100%; }
+.scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 18px; }
+.scope p { font-size: 12px; color: var(--muted); margin: 0; }
+.tabs { display: flex; gap: 6px; }
+.tabs button[aria-pressed="true"] { background: var(--green-soft); color: var(--green); border-color: var(--green); }
+.contentRow { grid-template-columns: minmax(0, 1fr) 125px 55px 100px; }
+.contentOpen { border: 0; background: none; padding: 0; color: inherit; text-align: left; width: 100%; }
+.contentOpen:hover { background: none; }
+.rowActions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.rowActions button { font-size: 11px; padding: 5px 9px; white-space: nowrap; }
+.danger { color: var(--danger); }
+.feedback { border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; margin: 14px 0; background: var(--panel, var(--surface)); font-size: 12px; line-height: 1.7; }
+.feedback p { margin: 3px 0; }
+.feedback ul { margin: 8px 0 0; padding-left: 20px; }
+.feedback .failed { color: var(--danger); }
+.batchBar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 12px 0; margin-bottom: 14px; border-block: 1px solid var(--line); font-size: 12px; }
+.check { display: inline-flex; align-items: center; flex-direction: row; gap: 8px; font-size: 12px; }
+.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--green); }
+.check span { min-width: 0; }
+.batchBar button { margin-left: auto; }
+.card { position: relative; border: 1px solid transparent; border-radius: 6px; padding: 5px; }
+.card[data-selected="true"] { border-color: var(--green); background: var(--green-soft); }
+.selection { position: absolute; z-index: 1; top: 12px; left: 12px; background: var(--surface); border-radius: 3px; padding: 5px; }
+.badge { display: inline-flex; font-size: 10px; padding: 3px 6px; background: var(--green-soft); color: var(--green); border-radius: 3px; }
+.protected { color: var(--warning, var(--muted)); background: var(--warning-soft, var(--panel, var(--paper))); }
+.compact { min-width: 0; }
+.compactTop { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.compactTop h3 { flex-basis: 100%; font-size: 12px; margin: 0; }
+.compactTop button { font-size: 10px; padding: 5px 7px; white-space: nowrap; }
+.compact .toolbar { gap: 8px; margin: 10px 0; }
+.compact .toolbar label { flex-basis: 90px; font-size: 10px; }
+.compact .toolbar .search { flex-basis: 100%; }
+.compact .toolbar input, .compact .toolbar select { font-size: 11px; padding: 7px; }
+.compactList { display: flex; flex-direction: column; gap: 12px; }
+.compactCard { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.compactCard .thumb { height: 52px; border-radius: 4px; }
+.compactCard .thumb > span { font-size: 13px; gap: 3px; }
+.compactCard .info { padding: 0; border: 0; }
+.compactCard .info h2 { font-size: 11px; margin: 0 0 4px; }
+.compactCard .info p { margin: 0 0 5px; }
+.compactCard .actions { margin-top: 8px; gap: 7px 12px; }
+.compactCard .actions button { font-size: 10px; }
+.compactHint { font-size: 10px; color: var(--muted); line-height: 1.7; margin: 10px 0; }
+.compact nav { gap: 5px; font-size: 10px; padding-top: 12px; }
+.compact nav button { padding: 5px 7px; font-size: 10px; }
+.references { border: 1px solid var(--line); padding: 16px; margin: 16px 0; border-radius: 6px; background: var(--panel, var(--surface)); scroll-margin-top: 80px; }
+.references header { display: flex; gap: 12px; justify-content: space-between; align-items: start; }
+.references h2 { font-size: 15px; margin: 0; overflow-wrap: anywhere; }
+.references header button { padding: 4px 8px; }
+.references p, .references li { font-size: 12px; line-height: 1.7; }
+.references ul { list-style: none; padding: 0; margin: 12px 0 0; }
+.references li { padding: 10px 0; border-top: 1px solid var(--line); }
+.references code { font-size: 10px; overflow-wrap: anywhere; }
+.confirmation { border: 1px solid var(--warning, var(--line)); border-radius: 6px; background: var(--warning-soft, var(--surface)); padding: 16px; margin: 16px 0; scroll-margin-top: 80px; }
+.confirmation h2 { font-size: 15px; margin: 0 0 8px; }
+.confirmation p { font-size: 12px; line-height: 1.8; }
+.confirmation .check { align-items: start; line-height: 1.7; margin: 12px 0; }
+.confirmation .check input { flex-shrink: 0; margin-top: 3px; }
+.confirmActions { display: flex; gap: 10px; margin-top: 12px; }
+.trashEditor { border: 1px solid var(--line); background: var(--panel, var(--surface)); padding: 20px; border-radius: 6px; }
+.trashEditor h2 { font-size: 18px; }
+.trashEditor p { color: var(--muted); line-height: 1.8; }
+.trashEditor .confirmActions { flex-wrap: wrap; }
+@media(max-width: 800px) {
+  .contentRow { grid-template-columns: minmax(0, 1fr) 85px; gap: 12px; }
+  .contentRow time, .contentRow > span { display: none; }
+  .toolbar .search { flex-basis: 100%; }
+}

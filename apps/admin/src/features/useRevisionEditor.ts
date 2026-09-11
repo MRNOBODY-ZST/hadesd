@@ -107,6 +107,8 @@ export function useRevisionEditor(initial: Content, pendingAttachments = 0) {
         client.setQueryData(["content", next.id], next);
         void client.invalidateQueries({ queryKey: ["contents"] });
         void client.invalidateQueries({ queryKey: ["revisions", next.id] });
+        void client.invalidateQueries({ queryKey: ["media"] });
+        void client.invalidateQueries({ queryKey: ["media-references"] });
         return next;
       } catch (failure) {
         setError(failure);

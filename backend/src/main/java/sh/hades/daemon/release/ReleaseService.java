@@ -151,6 +151,7 @@ public class ReleaseService {
     String rid = UUID.randomUUID().toString(), now = Instant.now().toString();
     if (req.operation() == Operation.ROLLBACK)
       return snapshot(req.releaseId())
+          .flatMap(s -> Flux.fromIterable(s.contents()).concatMap(c -> content.requireActive(c.id())).then(Mono.just(s)))
           .flatMap(
               s ->
                   db.sql(
@@ -183,7 +184,7 @@ public class ReleaseService {
                 return Mono.just(new ReleaseSnapshot(rid, now, t.getT2(), items));
               }
               return Mono.zip(
-                      content.get(req.contentId()),
+                      content.requireActive(req.contentId()).then(content.get(req.contentId())),
                       content.revision(req.contentId(), req.revisionId()))
                   .map(
                       pair -> {
@@ -497,10 +498,12 @@ public class ReleaseService {
         .flatMapMany(Flux::fromIterable)
         .concatMap(
             id ->
-                db.sql("DELETE FROM release_media WHERE release_id=:id")
+                db.sql("UPDATE revision r JOIN release_entry e ON e.revision_id=r.id JOIN publish_job j ON j.release_id=e.release_id SET r.publication_protected=TRUE WHERE e.release_id=:id AND j.status='SUCCEEDED'")
+                    .bind("id",id).fetch().rowsUpdated()
+                    .then(db.sql("DELETE FROM release_media WHERE release_id=:id")
                     .bind("id", id)
                     .fetch()
-                    .rowsUpdated()
+                    .rowsUpdated())
                     .then(
                         db.sql("DELETE FROM release_entry WHERE release_id=:id")
                             .bind("id", id)

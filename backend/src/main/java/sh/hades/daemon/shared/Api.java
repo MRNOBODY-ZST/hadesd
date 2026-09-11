@@ -95,7 +95,7 @@ public final class Api {
   }
 
   public record Content(
-      String id, ContentType type, long version, String createdAt, Revision latestRevision) {}
+      String id, ContentType type, long version, String createdAt, Revision latestRevision, String deletedAt) {}
 
   public record PublicContent(
       String id,
@@ -168,6 +168,14 @@ public final class Api {
       @NotBlank String leaseToken, @NotNull Status status, @Size(max = 1000) String error) {}
 
   public record Media(String id, String filename, String mime, long size, String createdAt) {}
+  public record ContentVersion(@Positive long version) {}
+  public record AdminMedia(String id, String filename, String mime, long size, String createdAt,
+      long referenceCount, boolean canDelete, boolean canDeleteHistory) {}
+  public record MediaReference(String kind, String contentId, String revisionId, String releaseId,
+      String title, boolean deleted, boolean current, @com.fasterxml.jackson.annotation.JsonProperty("protected") boolean protectedReference) {}
+  public record MediaBatchDelete(@NotEmpty @Size(max=50) List<@NotBlank String> ids, boolean discardUnusedHistory) {}
+  public record MediaDeleteResult(String id, String status, String code, String message) {}
+  public record MediaBatchDeleteResult(List<MediaDeleteResult> results) {}
 
   public record Page<T>(List<T> items, int page, int size, long total) {
     public static <T> Page<T> slice(List<T> items, int page, int size) {
