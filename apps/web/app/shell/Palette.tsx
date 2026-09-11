@@ -15,7 +15,7 @@ export function Palette({
     open({ route: query.trim() ? `/search?q=${encodeURIComponent(query.trim())}` : "/search", cwd: "/" });
     toggle("paletteOpen", false);
   }
-  const matches = nodes
+  const matches = nodes.filter(n => n.path !== "/home" && !n.path.startsWith("/home/"))
     .filter((n) =>
       `${n.title} ${n.path} ${n.summary}`
         .toLowerCase()

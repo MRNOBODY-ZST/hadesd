@@ -33,3 +33,51 @@
 .terminal [hidden] { display: none !important; }
 .screen-pager:focus { outline: none; }
 .screen-pager:focus-visible .screen-paging { color: var(--accent); }
+
+.terminal .terminal-transcript {
+  display: block;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y pinch-zoom;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 16px;
+  outline: none;
+}
+.terminal-transcript:focus-visible { box-shadow: inset 2px 0 var(--border); }
+.terminal-scroll-content { display: flow-root; padding-right: 10px; overflow-wrap: anywhere; }
+.terminal .terminal-record { margin: 0 0 18px; }
+.terminal-record:empty { display: none; }
+.terminal .terminal-output { max-height: none; overflow: visible; }
+.terminal-record pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 5px 0 12px; }
+.terminal-record .terminal-echo { margin-top: 12px; }
+.terminal .terminal-command-area { border-top: 1px solid var(--border); margin-top: 6px; }
+.terminal-document { min-width: 0; padding: 8px 0 18px; }
+.terminal-document > header, .terminal-document > footer { font: 11px/1.7 var(--font-mono); color: var(--text-muted); }
+.terminal-document > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding-bottom: 10px; border-bottom: 1px dashed var(--border); }
+.terminal-document > footer { border-top: 1px dashed var(--border); padding-top: 12px; margin-top: 20px; }
+.terminal-document .markdown { max-width: 100%; }
+.terminal-document .markdown pre { white-space: pre-wrap; }
+.terminal-document .md-table, .terminal-document .katex-display { overflow-x: auto; overscroll-behavior-x: contain; }
+.terminal-document img { max-width: 100%; height: auto; }
+.terminal-program-scroll { flex: 1; min-height: 0; overflow: auto; touch-action: pan-y; }
+.terminal-field input[type="password"] { display: block; width: 100%; min-width: 0; font: inherit; line-height: 22px; letter-spacing: inherit; background: transparent; color: var(--accent); border: 0; padding: 0; outline: none; border-radius: 0; caret-color: var(--accent); }
+.terminal .prompt { max-width: 65%; overflow-wrap: anywhere; white-space: normal; }
+.terminal .terminal-actions { flex-wrap: wrap; gap: 6px 16px; }
+@media (max-width: 600px) {
+  .terminal .terminal-key-hint { flex-basis: 100%; font-size: 9px; }
+  .terminal .prompt { max-width: 53%; font-size: 11px; }
+  .terminal-scroll-content { padding-right: 4px; }
+  .terminal-session { gap: 8px; }
+}
+@media print {
+  .terminal .terminal-transcript, .terminal-scroll-content { display: block; overflow: visible; height: auto; }
+  .terminal-command-area { display: none; }
+}
+@media (max-width: 600px) {
+  .terminal .prompt { flex-basis: auto; }
+}

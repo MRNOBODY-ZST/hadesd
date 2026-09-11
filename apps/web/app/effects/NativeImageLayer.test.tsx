@@ -54,6 +54,19 @@ it("aligns native images to the stage and clips their original geometry at every
   expect(measureNativeImage(image, surface, stage)?.opacity).toBe(.375);
 });
 
+it("clips scrolled article images above the prompt and outside the transcript scrollbar gutter", () => {
+  const { stage, surface, clip, image } = fixture();
+  clip.className = "terminal-transcript";
+  clip.style.cssText = "overflow:auto;border:5px solid transparent";
+  Object.defineProperties(clip, { clientWidth: { value: 178 }, clientHeight: { value: 150 } });
+  bounds(image, { left: 40, top: 200, width: 300, height: 200 });
+  expect(measureNativeImage(image, surface, stage)).toMatchObject({
+    left: 45, top: 180, width: 178, height: 35, imageLeft: -15, imageTop: 0,
+  });
+  bounds(image, { left: 40, top: -50, width: 300, height: 100 });
+  expect(measureNativeImage(image, surface, stage)).toBeNull();
+});
+
 it("omits unrevealed, failed, out-of-page and unsupported-origin images", () => {
   const { stage, surface, clip, image } = fixture();
   clip.style.visibility = "hidden";

@@ -17,7 +17,7 @@ afterEach(() => {
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.reader;
 });
-it("hydrates a fixed terminal on trailing-slash routes, then restores this-version preferences", async () => {
+it("hydrates a scrollable terminal on trailing-slash routes, then restores this-version preferences", async () => {
   const data: FrozenSite = {
     ...EMPTY_SNAPSHOT,
     contents: [
@@ -52,7 +52,7 @@ it("hydrates a fixed terminal on trailing-slash routes, then restores this-versi
   const container = document.createElement("div");
   container.innerHTML = serverHtml;
   document.body.append(container);
-  expect(container.querySelector(".prompt")?.textContent).toContain("~/posts");
+  expect(container.querySelector(".prompt")?.textContent).toContain("/posts");
   localStorage.setItem(
     "hadesd.display.v2",
     JSON.stringify({ theme: "paper", crt: "off", reader: false }),
@@ -66,7 +66,7 @@ it("hydrates a fixed terminal on trailing-slash routes, then restores this-versi
   });
   expect(recoverable).not.toHaveBeenCalled();
   expect(document.documentElement.dataset.theme).toBe("paper");
-  expect(container.querySelector(".prompt")?.textContent).toContain("~/posts");
+  expect(container.querySelector(".prompt")?.textContent).toContain("/posts");
   await act(async () => {
     root!.unmount();
   });

@@ -44,11 +44,13 @@ export function measureNativeImage(image: HTMLImageElement, surface: HTMLElement
       const bounds = ancestor.getBoundingClientRect();
       if (clips(style.overflowX || style.overflow)) {
         clip.left = Math.max(clip.left, bounds.left + pixels(style.borderLeftWidth));
-        clip.right = Math.min(clip.right, bounds.right - pixels(style.borderRightWidth));
+        const right = ancestor.clientWidth > 0 ? bounds.left + pixels(style.borderLeftWidth) + ancestor.clientWidth : bounds.right - pixels(style.borderRightWidth);
+        clip.right = Math.min(clip.right, right);
       }
       if (clips(style.overflowY || style.overflow)) {
         clip.top = Math.max(clip.top, bounds.top + pixels(style.borderTopWidth));
-        clip.bottom = Math.min(clip.bottom, bounds.bottom - pixels(style.borderBottomWidth));
+        const bottom = ancestor.clientHeight > 0 ? bounds.top + pixels(style.borderTopWidth) + ancestor.clientHeight : bounds.bottom - pixels(style.borderBottomWidth);
+        clip.bottom = Math.min(clip.bottom, bottom);
       }
     }
     if (ancestor === surface) break;

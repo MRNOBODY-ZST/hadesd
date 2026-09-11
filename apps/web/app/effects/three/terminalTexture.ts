@@ -59,6 +59,8 @@ export function createTerminalSurface(element: HTMLElement, onUpdate: () => void
     let remaining = MAX_CHARACTERS;
     let elements = 0;
     const range = doc.createRange();
+    const selection = doc.getSelection();
+    const selected = selection?.rangeCount && !selection.isCollapsed ? selection.getRangeAt(0) : null;
 
     function font(style: CSSStyleDeclaration) {
       ctx!.font = style.font || `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
@@ -99,30 +101,56 @@ export function createTerminalSurface(element: HTMLElement, onUpdate: () => void
       range.selectNodeContents(node);
       const boxes = Array.from(range.getClientRects()).filter((box) => box.width > 0 && box.height > 0);
       if (!boxes.some((box) => overlaps(box, clip))) return;
-      const data = node.data.slice(0, remaining);
-      remaining -= data.length;
+      // Selection belongs to the same scrolling/clipping hierarchy as its text.
+      // Painting one root-level selection rectangle leaks old history over the prompt.
+      if (selected?.intersectsNode(node)) {
+        const highlight = doc.createRange();
+        highlight.selectNodeContents(node);
+        if (selected.startContainer === node) highlight.setStart(node, selected.startOffset);
+        if (selected.endContainer === node) highlight.setEnd(node, selected.endOffset);
+        ctx!.fillStyle = "rgba(224, 188, 99, 0.2)";
+        for (const box of Array.from(highlight.getClientRects()).filter(box => overlaps(box, clip)).slice(0, 200)) {
+          ctx!.fillRect(box.left - root.left, box.top - root.top, box.width, box.height);
+        }
+      }
+      const data = node.data;
       const preservesSpaces = /^(pre|pre-wrap|break-spaces)$/.test(style.whiteSpace);
       // Ordinary single lines need one layout read, not a Range read per letter.
       const simpleWhitespace = preservesSpaces ? !/[\t\r\n]/.test(data) : !/[\t\r\n\f]| {2,}|^ | $/.test(data);
-      if (boxes.length === 1 && simpleWhitespace && data.length === node.data.length) {
+      if (boxes.length === 1 && simpleWhitespace && data.length <= remaining) {
+        remaining -= data.length;
         drawText(data, boxes[0]!, style, decoration);
         return;
       }
       let run = "";
       let runBox: Box | null = null;
       const flush = () => { if (runBox) drawText(run, runBox, style, decoration); run = ""; runBox = null; };
-      for (const { segment, index } of segmenter.segment(data)) {
-        range.setStart(node, index);
-        range.setEnd(node, index + segment.length);
-        const box = range.getBoundingClientRect();
-        if (!box.width || !box.height || !overlaps(box, clip)) { flush(); continue; }
-        // A collapsed newline has a space's geometry; preformatted tabs are gaps.
-        const glyph = /[\t\r\n\f]/.test(segment) ? (preservesSpaces ? "" : " ") : segment;
-        if (!glyph) { flush(); continue; }
-        if (runBox && (Math.abs(box.top - runBox.top) > 1 || Math.abs(box.height - runBox.height) > 1 || Math.abs(box.left - runBox.right) > 1.5)) flush();
-        if (!runBox) runBox = { left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
-        else { runBox.right = box.right; runBox.width = runBox.right - runBox.left; }
-        run += glyph;
+      const segments = segmenter.segment(data);
+      for (let start = 0; start < data.length && remaining > 0;) {
+        // Skip whole offscreen text chunks before measuring individual glyphs.
+        // Only visible ink consumes the budget, so scrolling a long `cat` result
+        // past 25,000 characters still shows its final lines and the next prompt.
+        const boundary = segments.containing(Math.min(data.length - 1, start + 2_048));
+        const end = boundary ? boundary.index + boundary.segment.length : data.length;
+        range.setStart(node, start); range.setEnd(node, end);
+        if (Array.from(range.getClientRects()).some(box => overlaps(box, clip))) {
+          for (const { segment, index } of segmenter.segment(data.slice(start, end))) {
+            range.setStart(node, start + index);
+            range.setEnd(node, start + index + segment.length);
+            const box = range.getBoundingClientRect();
+            if (!box.width || !box.height || !overlaps(box, clip)) { flush(); continue; }
+            // A collapsed newline has a space's geometry; preformatted tabs are gaps.
+            const glyph = /[\t\r\n\f]/.test(segment) ? (preservesSpaces ? "" : " ") : segment;
+            if (!glyph) { flush(); continue; }
+            if (remaining < segment.length) break;
+            remaining -= segment.length;
+            if (runBox && (Math.abs(box.top - runBox.top) > 1 || Math.abs(box.height - runBox.height) > 1 || Math.abs(box.left - runBox.right) > 1.5)) flush();
+            if (!runBox) runBox = { left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
+            else { runBox.right = box.right; runBox.width = runBox.right - runBox.left; }
+            run += glyph;
+          }
+        } else flush();
+        start = end;
       }
       flush();
     }
@@ -229,12 +257,16 @@ export function createTerminalSurface(element: HTMLElement, onUpdate: () => void
     }
 
     function visit(node: Element, clip: Box, decoration = "none") {
-      if (++elements > MAX_ELEMENTS || node.matches(OMIT)) return;
+      if (node.matches(OMIT)) return;
+      const box = node.getBoundingClientRect();
+      const visible = overlaps(box, clip);
+      // Transcript records contain their own ink. Old, offscreen articles must
+      // not exhaust the traversal budget before the current command is reached.
+      if (node.hasAttribute("data-terminal-record") && !visible) return;
+      if (++elements > MAX_ELEMENTS) return;
       const style = view!.getComputedStyle(node);
       const isCursor = node.hasAttribute("data-terminal-cursor");
       if (style.display === "none" || (!isCursor && (style.visibility === "hidden" || style.visibility === "collapse"))) return;
-      const box = node.getBoundingClientRect();
-      const visible = overlaps(box, clip);
       ctx!.save();
       // Ancestor/root opacity is intentionally ignored: the GPU replaces its ink.
       // Cursor opacity is animated in the GPU, never sampled at a random CSS phase.
@@ -255,14 +287,33 @@ export function createTerminalSurface(element: HTMLElement, onUpdate: () => void
           ctx!.strokeRect(box.left - root.left - offset, box.top - root.top - offset, box.width + offset * 2, box.height + offset * 2);
         }
       }
-      const clipsX = /^(hidden|clip|scroll|auto)$/.test(style.overflowX);
-      const clipsY = /^(hidden|clip|scroll|auto)$/.test(style.overflowY);
+      // The semantic DOM stays transparent while CRT rendering is enabled, which
+      // also hides the browser's scrollbar. Copy its position without replacing
+      // native wheel, touch, keyboard or thumb-drag behavior.
+      if (visible && node instanceof view!.HTMLElement && node.classList.contains("terminal-transcript") && style.scrollbarWidth !== "none") {
+        const height = node.clientHeight;
+        if (height > 0 && node.scrollHeight > height + 1) {
+          const gutter = Math.max(0, box.width - number(style.borderLeftWidth) - number(style.borderRightWidth) - node.clientWidth);
+          const thickness = Math.min(6, gutter || 6);
+          const thumbHeight = Math.min(height, Math.max(24, height * height / node.scrollHeight));
+          const top = box.top - root.top + number(style.borderTopWidth) + Math.min(1, Math.max(0, node.scrollTop / (node.scrollHeight - height))) * (height - thumbHeight);
+          ctx!.save();
+          ctx!.globalAlpha *= .55;
+          ctx!.fillStyle = style.color;
+          ctx!.fillRect(box.right - root.left - number(style.borderRightWidth) - thickness, top, thickness, thumbHeight);
+          ctx!.restore();
+        }
+      }
+      const clipsX = /^(hidden|clip|scroll|auto)$/.test(style.overflowX || style.overflow);
+      const clipsY = /^(hidden|clip|scroll|auto)$/.test(style.overflowY || style.overflow);
       let nextClip = clip;
       if (clipsX || clipsY) {
         const left = clipsX ? Math.max(clip.left, box.left + number(style.borderLeftWidth)) : clip.left;
-        const right = clipsX ? Math.min(clip.right, box.right - number(style.borderRightWidth)) : clip.right;
+        const clientRight = node.clientWidth > 0 ? box.left + number(style.borderLeftWidth) + node.clientWidth : box.right - number(style.borderRightWidth);
+        const clientBottom = node.clientHeight > 0 ? box.top + number(style.borderTopWidth) + node.clientHeight : box.bottom - number(style.borderBottomWidth);
+        const right = clipsX ? Math.min(clip.right, clientRight) : clip.right;
         const top = clipsY ? Math.max(clip.top, box.top + number(style.borderTopWidth)) : clip.top;
-        const bottom = clipsY ? Math.min(clip.bottom, box.bottom - number(style.borderBottomWidth)) : clip.bottom;
+        const bottom = clipsY ? Math.min(clip.bottom, clientBottom) : clip.bottom;
         nextClip = { left, right, top, bottom, width: right - left, height: bottom - top };
         if (nextClip.width <= 0 || nextClip.height <= 0) { ctx!.restore(); return; }
         ctx!.beginPath(); ctx!.rect(left - root.left, top - root.top, right - left, bottom - top); ctx!.clip();
@@ -286,13 +337,6 @@ export function createTerminalSurface(element: HTMLElement, onUpdate: () => void
     }
 
     visit(element, root);
-    const selection = doc.getSelection();
-    if (selection?.rangeCount && !selection.isCollapsed && selection.anchorNode && element.contains(selection.anchorNode)) {
-      ctx.fillStyle = "rgba(224, 188, 99, 0.2)";
-      for (const box of Array.from(selection.getRangeAt(0).getClientRects()).slice(0, 200)) {
-        if (overlaps(box, root)) ctx.fillRect(box.left - root.left, box.top - root.top, box.width, box.height);
-      }
-    }
     ctx.restore();
     onUpdate();
   }

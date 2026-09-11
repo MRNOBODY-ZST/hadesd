@@ -41,28 +41,21 @@ describe("terminal interaction", () => {
     const { field } = setup(<p>Click this article</p>);
     field.focus();
     fireEvent.click(screen.getByText("Click this article"));
-    expect(document.activeElement).toBe(screen.getByRole("region", { name: "终端屏幕" }));
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "终端历史记录" }));
   });
-  it("hands command results to the screen so arrow keys page without recalling history", async () => {
-    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function(this: HTMLElement) {
-      return this.classList.contains("screen-viewport") ? 220 : 22;
-    });
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function(this: HTMLElement) {
-      return this.classList.contains("screen-content") ? 924 : 220;
-    });
-    const { field } = setup();
-    field.focus();
+  it("keeps command focus and recalls history immediately after output", async () => {
+    const { field } = setup(); field.focus();
     fireEvent.change(field, { target: { value: "help" } });
     fireEvent.keyDown(field, { key: "Enter" });
     await waitFor(() => expect(screen.getByText("查看命令与使用示例")).toBeTruthy());
-    expect(document.activeElement).toBe(screen.getByRole("region", { name: "终端屏幕" }));
-    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
-    expect(document.querySelector(".screen-pager")?.getAttribute("data-page")).toBe("4");
-    expect((field as HTMLTextAreaElement).value).toBe("");
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    fireEvent.keyDown(field, { key: "ArrowUp" });
+    expect((field as HTMLTextAreaElement).value).toBe("help");
+    expect(document.querySelector(".screen-pager")).toBeNull();
   });
   it("opens a Vim buffer and :q returns command focus without navigating", async () => {
     const { field, open } = setup(<p>Current page</p>);
-    fireEvent.change(field, { target: { value: "open about.md" } });
+    fireEvent.change(field, { target: { value: "vim about.md" } });
     fireEvent.keyDown(field, { key: "Enter" });
     const buffer = await screen.findByRole("region", { name: "Vim 编辑器" });
     expect(buffer.textContent).toContain("NORMAL");
@@ -79,7 +72,7 @@ describe("terminal interaction", () => {
   });
   it("returns focus to the active Vim insert field after an inline program closes", async () => {
     const { field } = setup();
-    fireEvent.change(field, { target: { value: "open about.md" } });
+    fireEvent.change(field, { target: { value: "vim about.md" } });
     fireEvent.keyDown(field, { key: "Enter" });
     const buffer = await screen.findByRole("region", { name: "Vim 编辑器" });
     fireEvent.keyDown(buffer, { key: "i" });
@@ -102,13 +95,8 @@ describe("terminal interaction", () => {
     expect(open).not.toHaveBeenCalled();
     fireEvent.compositionEnd(field);
     fireEvent.keyDown(field, { key: "Enter", code: "Enter" });
-    await waitFor(() =>
-      expect(open).toHaveBeenCalledWith({
-        route: "/projects",
-        contentId: undefined,
-        cwd: "/projects",
-      }),
-    );
+    await waitFor(() => expect(screen.getByText("这个目录目前为空。")).toBeTruthy());
+    expect(open).not.toHaveBeenCalled();
   });
   it("Tab completes immediately, cycles both ways, and Escape releases native focus navigation", async () => {
     const user = userEvent.setup();
@@ -123,7 +111,7 @@ describe("terminal interaction", () => {
     await user.tab({ shift: true });
     expect((field as HTMLTextAreaElement).value).toBe("cd ");
     await user.tab({ shift: true });
-    expect((field as HTMLTextAreaElement).value).toBe("comments ");
+    expect((field as HTMLTextAreaElement).value).toBe("comment ");
     await user.tab();
     expect((field as HTMLTextAreaElement).value).toBe("cd ");
     await user.keyboard("{Escape}");
@@ -247,7 +235,7 @@ it("a delayed route commit cannot hide a newer terminal command", async () => {
   await waitFor(() =>
     expect(screen.getByText("查看命令与使用示例")).toBeTruthy(),
   );
-  expect(screen.getByText("Home file").closest("[hidden]")).not.toBeNull();
+  expect(screen.getByText("Home file").closest("[hidden]")).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: "HADESD 首页" }));
   await waitFor(() => expect(screen.getByText("Home file")).toBeTruthy());
   router.dispose();
@@ -352,69 +340,51 @@ it("does not complete during IME composition or steal Escape from another editor
   expect(document.activeElement).toBe(comment);
 });
 
-it("pages repeatedly while editing a command without needing to focus the section", () => {
-  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function(this: HTMLElement) {
-    return this.classList.contains("screen-viewport") ? 220 : 22;
-  });
-  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function(this: HTMLElement) {
-    return this.classList.contains("screen-content") ? 924 : 220;
-  });
+it("scrolls repeatedly while editing without switching focus", () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(220);
   const { field } = setup(<p>Long article</p>);
-  fireEvent.change(field, { target: { value: "unsubmitted draft" } });
-  field.focus();
+  const transcript = screen.getByRole("region", { name: "终端历史记录" });
+  fireEvent.change(field, { target: { value: "unsubmitted draft" } }); field.focus();
   act(() => { for (let i = 0; i < 3; i++) fireEvent.keyDown(field, { key: "PageDown" }); });
-  expect(document.querySelector(".screen-pager")?.getAttribute("data-page")).toBe("4");
+  expect(transcript.scrollTop).toBe(528);
   fireEvent.keyDown(field, { key: "PageUp" });
-  expect(document.querySelector(".screen-pager")?.getAttribute("data-page")).toBe("3");
+  expect(transcript.scrollTop).toBe(352);
   expect((field as HTMLTextAreaElement).value).toBe("unsubmitted draft");
   expect(document.activeElement).toBe(field);
 });
 
-it("routes account and comment commands into UI events without accepting secrets", async () => {
-  const account = vi.fn(), comments = vi.fn();
-  window.addEventListener("hadesd:account", account);
-  window.addEventListener("hadesd:comments", comments);
-  try {
-    const { field } = setup();
-    fireEvent.change(field, { target: { value: "profile" } });
-    fireEvent.keyDown(field, { key: "Enter" });
-    await waitFor(() => expect(account).toHaveBeenCalledTimes(1));
-    expect((account.mock.calls[0]![0] as CustomEvent).detail).toEqual({ action: "profile" });
-    fireEvent.change(field, { target: { value: "login name secret" } });
-    fireEvent.keyDown(field, { key: "Enter" });
-    await waitFor(() => expect(screen.getByText("login 不接受参数，请在对应界面操作。")).toBeTruthy());
-    expect(account).toHaveBeenCalledTimes(1);
-    fireEvent.change(field, { target: { value: "comments" } });
-    fireEvent.keyDown(field, { key: "Enter" });
-    await waitFor(() => expect(comments).toHaveBeenCalledTimes(1));
-    for (const [command, action] of [["files", "files"], ["mycomments", "comments"]]) {
-      fireEvent.change(field, { target: { value: command } });
-      fireEvent.keyDown(field, { key: "Enter" });
-      await waitFor(() => expect((account.mock.lastCall?.[0] as CustomEvent).detail).toEqual({ action }));
-    }
-  } finally {
-    window.removeEventListener("hadesd:account", account);
-    window.removeEventListener("hadesd:comments", comments);
-  }
+it("starts account questions directly in the command line without an account UI", async () => {
+  const { field } = setup();
+  fireEvent.change(field, { target: { value: "register" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  await screen.findByRole("textbox", { name: "Username:" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("region", { name: "账户" })).toBeNull();
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Username:" }), { key: "c", ctrlKey: true });
+  await screen.findByRole("textbox", { name: "博客命令" });
 });
 
 it("never echoes or recalls accidentally supplied account arguments", async () => {
   const { field } = setup();
-  for (const [name, command] of [
-    ["login", 'login "private-password-1"'],
-    ["register", '"register" private-password-2'],
-    ["profile", "pro\\file private-password-3"],
-    ["logout", "logout private-password-4"],
-  ]) {
+  for (const command of ['login user private-password-1', '"register" private-password-2', 'passwd private-password-3', 'logout private-password-4']) {
     fireEvent.change(field, { target: { value: command } });
-    fireEvent.keyDown(field, { key: "Enter" });
-    await waitFor(() => expect(screen.getByText(`${name} 不接受参数，请在对应界面操作。`)).toBeTruthy());
+    await act(async () => fireEvent.keyDown(field, { key: "Enter" }));
     expect(document.body.textContent).not.toContain("private-password");
   }
   fireEvent.keyDown(field, { key: "ArrowUp" });
   expect((field as HTMLTextAreaElement).value).toBe("logout");
   fireEvent.change(field, { target: { value: "history" } });
-  fireEvent.keyDown(field, { key: "Enter" });
-  await waitFor(() => expect(screen.getByText(/1  login\n2  register\n3  profile\n4  logout/u, { collapseWhitespace: false })).toBeTruthy());
+  await act(async () => fireEvent.keyDown(field, { key: "Enter" }));
   expect(document.body.textContent).not.toContain("private-password");
+});
+
+it("Tab with no candidates stays in the terminal until Escape releases focus", async () => {
+  const user = userEvent.setup();
+  const { field } = setup();
+  await user.type(field, "no_such_command");
+  await user.tab();
+  expect(document.activeElement).toBe(field);
+  expect((field as HTMLTextAreaElement).value).toBe("no_such_command");
+  await user.keyboard("{Escape}"); await user.tab();
+  expect(document.activeElement).not.toBe(field);
 });

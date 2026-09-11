@@ -60,12 +60,6 @@ export function Shell({
     () => ({ data, nodes, cwd, open }),
     [data, nodes, cwd, open],
   );
-  useEffect(() => {
-    let frame: number | undefined;
-    const comments = () => { frame = requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("hadesd:page", { detail: { anchor: "comments" } }))); };
-    window.addEventListener("hadesd:comments", comments);
-    return () => { window.removeEventListener("hadesd:comments", comments); if (frame !== undefined) cancelAnimationFrame(frame); };
-  }, []);
   return (
     <AccountProvider><ActionsContext value={shared}>
       <TerminalStage theme={p.theme} level={p.reader ? "off" : p.crt}>
@@ -78,7 +72,7 @@ export function Shell({
             <Terminal dispatchRef={dispatchRef}>{children}</Terminal>
           </main>
           <noscript>
-            <style>{`.terminal-shell{height:auto!important;overflow:visible!important;min-height:100vh!important}.terminal-shell main,.terminal,.screen-pager,.screen-viewport{display:block!important;height:auto!important;overflow:visible!important}.screen-content{transform:none!important}.terminal-input,.screen-paging,.terminal-actions,.terminal-output-return{display:none!important}`}</style>
+            <style>{`.terminal-shell{height:auto!important;overflow:visible!important;min-height:100vh!important}.terminal-shell main,.terminal,.terminal-transcript,.terminal-scroll-content,.screen-viewport{display:block!important;height:auto!important;overflow:visible!important}.screen-content{transform:none!important}.terminal-input,.screen-paging,.terminal-actions,.terminal-output-return{display:none!important}`}</style>
           </noscript>
         </div>
       </TerminalStage>

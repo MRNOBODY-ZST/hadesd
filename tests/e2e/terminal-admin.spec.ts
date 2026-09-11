@@ -44,7 +44,7 @@ test("administrator Vim saves a private revision and retains text on concurrent-
     await expect(page.locator(".terminal-stage")).toHaveAttribute("data-stage-ready", "true");
     await expect(page.locator(".community-bar")).toContainText("@" + username);
     const shell = page.getByRole("textbox", { name: "博客命令", exact: true });
-    await shell.fill(`open /posts/${slug}.md`); await shell.press("Enter");
+    await shell.fill(`vim /posts/${slug}.md`); await shell.press("Enter");
     const editor = page.getByRole("region", { name: "Vim 编辑器", exact: true });
     await expect(editor).toBeVisible(); await page.keyboard.press("i");
     await expect(editor).toContainText("SERVER DRAFT");
@@ -55,7 +55,7 @@ test("administrator Vim saves a private revision and retains text on concurrent-
     expect(saved.latestRevision.markdown).toBe("# 仅保存至后端的 Vim 草稿");
     expect(saved.latestRevision.title).toBe(revision.title);
     expect((await (await request.get(api + `/public/contents/${content.id}`)).json()).markdown).toBe(revision.markdown);
-    await shell.fill(`open /posts/${slug}.md`); await shell.press("Enter");
+    await shell.fill(`vim /posts/${slug}.md`); await shell.press("Enter");
     await expect(editor).toBeVisible(); await page.keyboard.press("i");
     await expect(text).toHaveValue(saved.latestRevision.markdown);
     expect((await request.post(api + `/admin/contents/${content.id}/revisions`, { headers, data: { ...revision, version: saved.version, markdown: "# 另一标签页的新草稿" } })).status()).toBe(200);
