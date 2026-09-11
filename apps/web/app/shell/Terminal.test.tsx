@@ -20,7 +20,8 @@ import { createVfs, type FrozenSite } from "@hadesd/terminal-core";
 import { EMPTY_SNAPSHOT } from "@hadesd/contracts";
 import { ActionsContext } from "./actions";
 import { Terminal } from "./Terminal";
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+import { usePreferences } from "./store";
+afterEach(() => { cleanup(); usePreferences.setState({ settingsOpen: false, paletteOpen: false }); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const data: FrozenSite = EMPTY_SNAPSHOT;
 function setup(children?: ReactNode) {
   const open = vi.fn();
@@ -36,6 +37,59 @@ function setup(children?: ReactNode) {
   return { field: screen.getByRole("textbox", { name: "博客命令" }), open };
 }
 describe("terminal interaction", () => {
+  it("clicking article text returns arrow navigation to the screen", () => {
+    const { field } = setup(<p>Click this article</p>);
+    field.focus();
+    fireEvent.click(screen.getByText("Click this article"));
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "终端屏幕" }));
+  });
+  it("hands command results to the screen so arrow keys page without recalling history", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function(this: HTMLElement) {
+      return this.classList.contains("screen-viewport") ? 220 : 22;
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function(this: HTMLElement) {
+      return this.classList.contains("screen-content") ? 924 : 220;
+    });
+    const { field } = setup();
+    field.focus();
+    fireEvent.change(field, { target: { value: "help" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(screen.getByText("查看命令与使用示例")).toBeTruthy());
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "终端屏幕" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(document.querySelector(".screen-pager")?.getAttribute("data-page")).toBe("4");
+    expect((field as HTMLTextAreaElement).value).toBe("");
+  });
+  it("opens a Vim buffer and :q returns command focus without navigating", async () => {
+    const { field, open } = setup(<p>Current page</p>);
+    fireEvent.change(field, { target: { value: "open about.md" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    const buffer = await screen.findByRole("region", { name: "Vim 编辑器" });
+    expect(buffer.textContent).toContain("NORMAL");
+    expect(buffer.textContent).toContain("READ ONLY");
+    expect(open).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "z" });
+    expect((field as HTMLTextAreaElement).value).toBe("");
+    fireEvent.keyDown(buffer, { key: ":" });
+    const command = screen.getByRole("textbox", { name: "Vim 命令" });
+    fireEvent.change(command, { target: { value: "q" } });
+    fireEvent.keyDown(command, { key: "Enter" });
+    expect(screen.queryByRole("region", { name: "Vim 编辑器" })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(field));
+  });
+  it("returns focus to the active Vim insert field after an inline program closes", async () => {
+    const { field } = setup();
+    fireEvent.change(field, { target: { value: "open about.md" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    const buffer = await screen.findByRole("region", { name: "Vim 编辑器" });
+    fireEvent.keyDown(buffer, { key: "i" });
+    const editor = await screen.findByRole("textbox", { name: "Vim 文本" });
+    act(() => usePreferences.getState().toggle("settingsOpen", true));
+    expect(screen.queryByRole("textbox", { name: "Vim 文本" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("region", { name: "DISPLAY / 显示设置" }), { key: "Escape" });
+    await act(async () => { await new Promise(requestAnimationFrame); });
+    await waitFor(() => expect(document.activeElement).toBe(editor));
+  });
   it("IME Enter never submits or navigates", async () => {
     const { field, open } = setup();
     fireEvent.change(field, { target: { value: "projects" } });
@@ -193,7 +247,7 @@ it("a delayed route commit cannot hide a newer terminal command", async () => {
   await waitFor(() =>
     expect(screen.getByText("查看命令与使用示例")).toBeTruthy(),
   );
-  expect(screen.queryByText("Home file")).toBeNull();
+  expect(screen.getByText("Home file").closest("[hidden]")).not.toBeNull();
   fireEvent.click(screen.getByRole("link", { name: "HADESD 首页" }));
   await waitFor(() => expect(screen.getByText("Home file")).toBeTruthy());
   router.dispose();
@@ -333,6 +387,11 @@ it("routes account and comment commands into UI events without accepting secrets
     fireEvent.change(field, { target: { value: "comments" } });
     fireEvent.keyDown(field, { key: "Enter" });
     await waitFor(() => expect(comments).toHaveBeenCalledTimes(1));
+    for (const [command, action] of [["files", "files"], ["mycomments", "comments"]]) {
+      fireEvent.change(field, { target: { value: command } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      await waitFor(() => expect((account.mock.lastCall?.[0] as CustomEvent).detail).toEqual({ action }));
+    }
   } finally {
     window.removeEventListener("hadesd:account", account);
     window.removeEventListener("hadesd:comments", comments);

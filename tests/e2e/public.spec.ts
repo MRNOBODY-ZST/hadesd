@@ -6,6 +6,7 @@ const articleTitle = "欢迎来到 hadesd.sh";
 const longArticle = "/posts/time-and-backpressure";
 const longTitle = "非阻塞系统中的时间与背压";
 const shots = process.env.E2E_SCREENSHOTS_DIR ?? ".local/reports/screenshots";
+const introShot = (name: string) => shots + "/e2e-" + name;
 
 test.beforeAll(async () => {
   await mkdir(shots, { recursive: true });
@@ -13,14 +14,11 @@ test.beforeAll(async () => {
 
 async function ready(page: Page) {
   const stage = page.locator(".terminal-stage");
-  // Business tests enter directly; the intro tests below exercise its real timeline.
-  // Wait for initialization so an early skip cannot masquerade as GPU readiness.
+  // Respect the system accessibility preference for flows unrelated to the intro.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(stage).toHaveAttribute("data-renderer", /^(WebGPU|WebGL2|DOM)$/, {
     timeout: 35000,
   });
-  if ((await stage.getAttribute("data-stage-ready")) !== "true") {
-    await page.getByRole("button", { name: "跳过片头，进入终端", exact: true }).click();
-  }
   await expect(stage).toHaveAttribute(
     "data-stage-ready",
     "true",
@@ -30,6 +28,7 @@ async function ready(page: Page) {
   await expect(stage).toHaveAttribute("data-reveal-step", "7");
   await expect(page.locator(".stage-content")).not.toHaveAttribute("inert");
   await expect(page.locator("html")).toHaveAttribute("data-terminal", "true");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
 }
 async function openTerminal(page: Page, path = "/") {
   await page.goto(path + (path.includes("?") ? "&" : "?") + "gpu=webgl");
@@ -129,20 +128,35 @@ type IntroGraphics = {
   revealStep: number;
   asciiActive: boolean;
   asciiTilesVisible: boolean;
-  hardwareVisible: boolean;
-  visibleHardwareCount: number;
+  binaryStreamsVisible: boolean;
+  visibleBinaryStreamCount: number;
   macVisible: boolean;
+  bootSequence: number;
 };
 type IntroSample = {
   phase: string; journey: number; boot: number; phaseProgress: number;
+  renderer: string; bootSegment: string | null; time: number;
   reveal: number; ready: boolean; inert: boolean;
   visible: (boolean | null)[];
 };
+type BootFrame = {
+  dataUrl: string; graphics: IntroGraphics; segment: string; time: number;
+  opaqueRatio: number; luminanceRange: number; meanLuminance: number; maximumLuminance: number;
+};
+async function mockIntroAccount(page: Page) {
+  // Intro geometry is independent of the backend and the published snapshot.
+  await page.route("**/api/v1/auth/session", route => route.fulfill({ json: { user: null } }));
+}
 /** Observe actual committed DOM phases, including short transitions between assertions. */
 async function observeIntro(page: Page) {
+  await mockIntroAccount(page);
   await page.addInitScript(() => {
-    const state = window as unknown as { __hadesdIntroSamples: IntroSample[] };
+    const state = window as unknown as {
+      __hadesdIntroSamples: IntroSample[]; __hadesdBootFrames: Record<string, BootFrame>;
+      __hadesdGraphics?: IntroGraphics;
+    };
     state.__hadesdIntroSamples = [];
+    state.__hadesdBootFrames = {};
     const selectors = [".terminal-session", ".terminal-identity", ".terminal-files", ".terminal-recent", ".terminal-welcome-hint", ".screen-paging", ".terminal-input"];
     const record = () => {
       const stage = document.querySelector<HTMLElement>(".terminal-stage");
@@ -150,6 +164,7 @@ async function observeIntro(page: Page) {
       state.__hadesdIntroSamples.push({
         phase: stage.dataset.introPhase!, journey: Number(stage.dataset.introProgress),
         boot: Number(stage.dataset.bootProgress), phaseProgress: Number(stage.dataset.phaseProgress),
+        renderer: stage.dataset.renderer!, bootSegment: stage.dataset.bootSegment || null, time: performance.now(),
         reveal: Number(stage.dataset.revealStep), ready: stage.dataset.stageReady === "true",
         inert: !!stage.querySelector(".stage-content[inert]"),
         visible: selectors.map((selector) => {
@@ -159,9 +174,58 @@ async function observeIntro(page: Page) {
       });
       if (state.__hadesdIntroSamples.length > 2000) state.__hadesdIntroSamples.shift();
     };
+    const captureFrame = (graphics: IntroGraphics) => {
+      const stage = document.querySelector<HTMLElement>(".terminal-stage");
+      if (!stage || graphics.introPhase !== "boot") return;
+      const p = graphics.bootSequence;
+      const segment = p < .07 ? "warmup" : p >= .12 && p < .33 ? "post" : p >= .6 && p < .8 ? "gui" : null;
+      if (!segment || state.__hadesdBootFrames[segment]) return;
+      const gpu = stage.querySelector<HTMLCanvasElement>(".stage-graphics canvas");
+      if (!gpu || !gpu.width || !gpu.height) return;
+      const copy = document.createElement("canvas");
+      copy.width = gpu.width; copy.height = gpu.height;
+      const ctx = copy.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.drawImage(gpu, 0, 0);
+      const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
+      let opaque = 0, darkest = 765, lightest = 0, totalLuminance = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i + 3]! > 250) opaque++;
+        const luminance = pixels[i]! + pixels[i + 1]! + pixels[i + 2]!;
+        darkest = Math.min(darkest, luminance); lightest = Math.max(lightest, luminance);
+        totalLuminance += luminance;
+      }
+      const opaqueRatio = opaque / (pixels.length / 4);
+      const luminanceRange = lightest - darkest;
+      // Capture synchronously after the committed GPU frame. The unlit tube may
+      // now be entirely black: its warmup does not need a bright perimeter.
+      if (opaqueRatio < .95 || (segment !== "warmup" && luminanceRange < 5)) return;
+      state.__hadesdBootFrames[segment] = {
+        dataUrl: copy.toDataURL("image/png"), graphics: { ...graphics }, segment, time: performance.now(), opaqueRatio, luminanceRange,
+        meanLuminance: totalLuminance / (pixels.length / 4) / 3, maximumLuminance: lightest / 3,
+      };
+    };
+    // The diagnostic write happens synchronously after pipeline.render(). It
+    // is the final readable moment before WebGL discards the drawing buffer.
+    // Observe those writes without changing application, renderer or clock state.
+    let graphicsValue: IntroGraphics | undefined;
+    Object.defineProperty(window, "__hadesdGraphics", {
+      configurable: true,
+      get: () => graphicsValue,
+      set: (value: IntroGraphics) => {
+        graphicsValue = new Proxy(value, {
+          set(target, property, next) {
+            Reflect.set(target, property, next);
+            if (property === "bootSequence") captureFrame(target);
+            return true;
+          },
+        });
+        captureFrame(value);
+      },
+    });
     new MutationObserver(record).observe(document, {
       childList: true, subtree: true, attributes: true,
-      attributeFilter: ["data-intro-phase", "data-intro-progress", "data-boot-progress", "data-phase-progress", "data-reveal-step", "data-stage-ready", "data-terminal-reveal-step"],
+      attributeFilter: ["data-intro-phase", "data-intro-progress", "data-boot-progress", "data-boot-segment", "data-renderer", "data-phase-progress", "data-reveal-step", "data-stage-ready", "data-terminal-reveal-step"],
     });
   });
 }
@@ -172,6 +236,11 @@ function assertCompleteIntro(samples: IntroSample[]) {
   const phases = samples.map((sample) => sample.phase).filter((phase, index, all) => index === 0 || phase !== all[index - 1]);
   expect(phases).toEqual(["boot", "pullback", "hero", "journey", "resume", "penetrate", "reveal", "terminal"]);
   const boot = samples.filter((sample) => sample.phase === "boot");
+  expect([...new Set(boot.map(sample => sample.bootSegment))]).toEqual(["warmup", "post", "transition", "gui"]);
+  expect(boot.filter(sample => sample.phaseProgress < 42).every(sample => sample.boot === 0)).toBe(true);
+  const gpuStart = boot.find(sample => sample.renderer === "WebGL2" && sample.phaseProgress === 0)!;
+  const pullback = samples.find(sample => sample.phase === "pullback")!;
+  expect(pullback.time - gpuStart.time).toBeGreaterThanOrEqual(4950);
   expect(boot.some((sample) => sample.boot > 0)).toBe(true);
   expect(boot.every((sample) => sample.boot <= 80)).toBe(true);
   expect(samples.filter((sample) => ["pullback", "hero", "journey"].includes(sample.phase)).every((sample) => sample.boot === 80 && !sample.ready)).toBe(true);
@@ -232,47 +301,106 @@ async function touchSwipe(session: CDPSession, x: number, from: number, to: numb
   }
   await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 }
+async function saveBootFrames(page: Page, label: string) {
+  const frames = await page.evaluate(() => (window as unknown as { __hadesdBootFrames: Record<string, BootFrame> }).__hadesdBootFrames);
+  expect(Object.keys(frames).sort()).toEqual(["gui", "post", "warmup"]);
+  expect(frames.warmup!.graphics.bootSequence).toBeLessThan(.07);
+  expect(frames.warmup!.graphics.phaseProgress).toBeLessThan(.07);
+  expect(frames.warmup!.graphics.bootProgress).toBe(0);
+  expect(frames.warmup!.opaqueRatio).toBeGreaterThan(.95);
+  expect(frames.warmup!.meanLuminance).toBeLessThan(16);
+  expect(frames.warmup!.maximumLuminance).toBeLessThan(100);
+  expect(frames.post!.graphics.bootProgress).toBe(0);
+  expect(frames.gui!.graphics.bootProgress).toBeGreaterThan(0);
+  for (const [segment, frame] of Object.entries(frames)) {
+    await writeFile(introShot(`${label}-${segment}.png`), Buffer.from(frame.dataUrl.split(",")[1]!, "base64"));
+  }
+  const metadata = Object.fromEntries(Object.entries(frames).map(([segment, { dataUrl, ...frame }]) => [segment, frame]));
+  await writeFile(`.local/reports/${label}-frames.json`, JSON.stringify(metadata, null, 2));
+}
+async function expectFullScreenSurface(page: Page) {
+  const geometry = await page.locator(".stage-content").evaluate(surface => {
+    const rect = surface.getBoundingClientRect();
+    const stage = surface.parentElement!.getBoundingClientRect();
+    const field = surface.querySelector("#terminal-command")!.getBoundingClientRect();
+    return { width: rect.width / stage.width, height: rect.height / stage.height,
+      x: (rect.left - stage.left) / stage.width, y: (rect.top - stage.top) / stage.height,
+      fieldInside: field.left >= rect.left && field.right <= rect.right && field.top >= rect.top && field.bottom <= rect.bottom };
+  });
+  expect(geometry.width).toBeCloseTo(.98, 3);
+  expect(geometry.height).toBeCloseTo(.96, 3);
+  expect(geometry.x).toBeCloseTo(.01, 3);
+  expect(geometry.y).toBeCloseTo(.02, 3);
+  expect(geometry.fieldInside).toBe(true);
+}
 
-test("DOS pauses at 80%, pulls back to Mac, then scroll resumes boot, penetrates and reveals the terminal", async ({ page }) => {
+async function wheelTravel(page: Page, pixels: number) {
+  // Individual wheel notches stay small, just as the interaction now requires.
+  // Acknowledging native dispatch avoids coalescing several notches into one
+  // capped event when the graphics backend is slower than the test runner.
+  await page.evaluate(() => {
+    const state = window as unknown as { __hadesdWheelEvents?: number };
+    if (state.__hadesdWheelEvents !== undefined) return;
+    state.__hadesdWheelEvents = 0;
+    window.addEventListener("wheel", () => state.__hadesdWheelEvents!++, { capture: true, passive: true });
+  });
+  let remaining = pixels;
+  while (Math.abs(remaining) > 0.001) {
+    const step = Math.sign(remaining) * Math.min(120, Math.abs(remaining));
+    const before = await page.evaluate(() => (window as unknown as { __hadesdWheelEvents: number }).__hadesdWheelEvents);
+    await page.mouse.wheel(0, step);
+    await page.waitForFunction(count => (window as unknown as { __hadesdWheelEvents: number }).__hadesdWheelEvents > count, before);
+    remaining -= step;
+  }
+}
+
+async function travelForward(page: Page) {
+  for (let i = 0; i < 9; i++) await page.keyboard.press("PageDown");
+}
+
+test("CRT warms up before DOS and GUI, then scroll resumes boot and reveals the full-screen terminal", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await observeIntro(page);
   await page.goto("/?gpu=webgl");
   const stage = page.locator(".terminal-stage");
   await expect(stage).toHaveAttribute("data-intro-phase", "boot");
-  await expect(page.locator(".stage-boot-status")).toBeVisible();
+  await expect(page.locator(".stage-boot-status")).toHaveCSS("clip-path", "inset(50%)");
   await expect.poll(async () => (await introGraphics(page))?.introPhase, { timeout: 35000 }).toBe("boot");
-  await page.screenshot({ path: shots + "/intro-desktop-dos.png" });
   await expectFixedViewport(page);
 
   await expect(stage).toHaveAttribute("data-intro-phase", "pullback", { timeout: 15000 });
   await expect(stage).toHaveAttribute("data-boot-progress", "80");
   await expect(page.locator(".stage-hero")).toHaveAttribute("inert", "");
   await expect(stage).toHaveAttribute("data-intro-phase", "hero", { timeout: 15000 });
+  await saveBootFrames(page, "intro-desktop-boot");
   await expect(stage).toHaveAttribute("data-boot-progress", "80");
   await expect(page.getByRole("region", { name: "个人计算机介绍" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "进入终端", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "让想象，接通现实。" })).toBeVisible();
+  await expect(page.getByText("滚动进入这台电脑", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /进入终端|SKIP INTRO/ })).toHaveCount(0);
+  await expect(page.locator(".stage-base")).toHaveCount(0);
   await expect.poll(async () => (await introGraphics(page))?.macVisible).toBe(true);
   await page.waitForTimeout(900); // Hero intentionally waits for the reader indefinitely.
   await expect(stage).toHaveAttribute("data-intro-phase", "hero");
   await expect(stage).toHaveAttribute("data-intro-progress", "0");
   await expect(stage).toHaveAttribute("data-stage-ready", "false");
-  await page.screenshot({ path: shots + "/intro-desktop-hero.png" });
+  await page.screenshot({ path: introShot("intro-desktop-hero.png") });
 
   await page.mouse.move(980, 480);
-  await page.mouse.wheel(0, 360);
+  await wheelTravel(page, 360);
   await expect(stage).toHaveAttribute("data-intro-phase", "journey");
-  await expect.poll(async () => Number(await stage.getAttribute("data-intro-progress"))).toBeGreaterThanOrEqual(17);
-  expect(Number(await stage.getAttribute("data-intro-progress"))).toBeLessThan(30);
+  await expect.poll(async () => Number(await stage.getAttribute("data-intro-progress"))).toBeGreaterThanOrEqual(5);
+  expect(Number(await stage.getAttribute("data-intro-progress"))).toBeLessThan(8);
   await expectFixedViewport(page);
   // All four positions have the same DOM percentage. The physical Mac and
   // first tile must switch in the GPU frame, without a React percentage update.
-  const wheelSpan = Math.max(1200, page.viewportSize()!.height * 2.1);
+  const wheelSpan = Math.max(4800, page.viewportSize()!.height * 6.6);
   let wheelTotal = 360;
   const handoff: IntroGraphics[] = [];
   for (const [index, target] of [0.2749, 0.2751, 0.2749, 0.2751].entries()) {
     const destination = target * wheelSpan;
-    await page.mouse.wheel(0, destination - wheelTotal);
+    await wheelTravel(page, destination - wheelTotal);
     wheelTotal = destination;
     await expect.poll(async () => Math.abs((await introGraphics(page))!.journey - target)).toBeLessThan(1e-6);
     const frame = (await introGraphics(page))!;
@@ -282,16 +410,16 @@ test("DOS pauses at 80%, pulls back to Mac, then scroll resumes boot, penetrates
     await expect(stage).toHaveAttribute("data-intro-progress", "27");
     await expect(stage).toHaveAttribute("data-intro-phase", "journey");
     handoff.push(frame);
-    if (index < 2) await page.screenshot({ path: shots + `/intro-desktop-handoff-${index === 0 ? "mac" : "tile"}.png` });
+    if (index < 2) await page.screenshot({ path: introShot(`intro-desktop-handoff-${index === 0 ? "mac" : "tile"}.png`) });
   }
-  await page.mouse.wheel(0, 1040 - wheelTotal);
+  await wheelTravel(page, 0.55 * wheelSpan - wheelTotal);
   await expect.poll(async () => Number(await stage.getAttribute("data-intro-progress"))).toBeGreaterThanOrEqual(53);
   await expect.poll(async () => (await introGraphics(page))?.asciiActive).toBe(true);
-  await expect.poll(async () => (await introGraphics(page))?.hardwareVisible).toBe(true);
+  await expect.poll(async () => (await introGraphics(page))?.binaryStreamsVisible).toBe(true);
   const middle = await introGraphics(page);
-  expect(middle?.visibleHardwareCount).toBeGreaterThanOrEqual(3);
+  expect(middle?.visibleBinaryStreamCount).toBeGreaterThanOrEqual(3);
   expect(middle?.journey).toBeLessThan(0.7);
-  await page.screenshot({ path: shots + "/intro-desktop-hardware-ascii.png" });
+  await page.screenshot({ path: introShot("intro-desktop-binary-ascii.png") });
   await expectFixedViewport(page);
 
   // Spatial motion belongs to wheel input. GPU frames may continue for the wink
@@ -304,32 +432,33 @@ test("DOS pauses at 80%, pulls back to Mac, then scroll resumes boot, penetrates
   expect(still.frames).toBeGreaterThan(held.frames);
   await expect(stage).toHaveAttribute("data-intro-phase", "journey");
   await expect(stage).toHaveAttribute("data-boot-progress", "80");
-  await page.mouse.wheel(0, -200);
+  await wheelTravel(page, -0.08 * wheelSpan);
   await expect.poll(async () => (await introGraphics(page))!.journey).toBeLessThan(held.journey - 0.06);
   await page.waitForTimeout(900);
   const reversed = (await introGraphics(page))!;
   expect(reversed.asciiActive).toBe(true);
   await expect(stage).toHaveAttribute("data-stage-ready", "false");
-  await page.screenshot({ path: shots + "/intro-desktop-ascii-reversed.png" });
+  await page.screenshot({ path: introShot("intro-desktop-ascii-reversed.png") });
   await expectFixedViewport(page);
-  await page.mouse.wheel(0, 200);
+  await wheelTravel(page, 0.08 * wheelSpan);
   await expect.poll(async () => Math.abs((await introGraphics(page))!.journey - held.journey)).toBeLessThan(0.002);
   const returned = (await introGraphics(page))!;
   expect(returned.asciiActive).toBe(true);
-  await page.screenshot({ path: shots + "/intro-desktop-ascii-returned.png" });
+  await page.screenshot({ path: introShot("intro-desktop-ascii-returned.png") });
   const journeyControl = { held, still, reversed, returned };
 
-  await page.mouse.wheel(0, 1000);
+  await travelForward(page);
   const partial = await waitForRevealingTerminal(page);
   await expect.poll(async () => (await introGraphics(page))?.introPhase).toBe("terminal");
   const terminal = await introGraphics(page);
   expect(terminal?.asciiActive).toBe(false);
-  expect(terminal?.hardwareVisible).toBe(false);
+  expect(terminal?.binaryStreamsVisible).toBe(false);
   expect(terminal?.macVisible).toBe(false);
   await expectFixedViewport(page);
+  await expectFullScreenSurface(page);
   await run(page, "pwd");
   await expect(page.locator(".terminal-output pre").last()).toHaveText("/");
-  await page.screenshot({ path: shots + "/intro-desktop-terminal.png" });
+  await page.screenshot({ path: introShot("intro-desktop-terminal.png") });
   expect(errors).toEqual([]);
   const samples = await introSamples(page);
   assertCompleteIntro(samples);
@@ -350,38 +479,42 @@ test("mobile touch completes resumed boot and staged reveal without document scr
     const stage = page.locator(".terminal-stage");
     await expect(stage).toHaveAttribute("data-intro-phase", "boot");
     await expect(stage).toHaveAttribute("data-intro-phase", "hero", { timeout: 35000 });
+    await saveBootFrames(page, "intro-mobile-boot");
     await expect(stage).toHaveAttribute("data-boot-progress", "80");
     await expect.poll(async () => (await introGraphics(page))?.macVisible).toBe(true);
-    await expect(page.getByRole("button", { name: "进入终端", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "让想象，接通现实。" })).toBeVisible();
     expect(await page.evaluate(() => ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName || ""))).toBe(false);
-    await page.screenshot({ path: shots + "/intro-mobile-hero.png" });
+    await page.screenshot({ path: introShot("intro-mobile-hero.png") });
     await expectFixedViewport(page);
+    await expectFullScreenSurface(page);
     const session = await context.newCDPSession(page);
     await touchSwipe(session, 195, 670, 380);
     await expect(stage).toHaveAttribute("data-intro-phase", "journey");
-    await expect.poll(async () => Number(await stage.getAttribute("data-intro-progress"))).toBeGreaterThanOrEqual(25);
-    expect(Number(await stage.getAttribute("data-intro-progress"))).toBeLessThan(40);
+    await expect.poll(async () => Number(await stage.getAttribute("data-intro-progress"))).toBeGreaterThanOrEqual(12);
+    expect(Number(await stage.getAttribute("data-intro-progress"))).toBeLessThan(18);
     await expectFixedViewport(page);
-    // Stop on the four-hardware composition. A second full-length swipe lands
-    // near 57%, where hardware is already exiting; sampling its earlier frame
-    // merely because the DOM passed 53% made this assertion timing dependent.
-    await touchSwipe(session, 195, 670, 464);
+    // Reach the middle composition through several measured real touch gestures.
+    const touchSpan = Math.max(1600, page.viewportSize()!.height * 2.4);
+    await touchSwipe(session, 195, 670, 380);
+    await touchSwipe(session, 195, 670, 670 - (0.49 * touchSpan - 580));
     await expect.poll(async () => Math.abs((await introGraphics(page))!.journey - 0.49)).toBeLessThan(0.001);
     const settled = (await introGraphics(page))!;
     await page.waitForTimeout(500);
     const middle = (await introGraphics(page))!;
     expect(middle.journey).toBeCloseTo(settled.journey, 3);
     expect(middle.asciiActive).toBe(true);
-    expect(middle.hardwareVisible).toBe(true);
-    expect(middle.visibleHardwareCount).toBeGreaterThanOrEqual(3);
-    await page.screenshot({ path: shots + "/intro-mobile-hardware-ascii.png" });
+    expect(middle.binaryStreamsVisible).toBe(true);
+    expect(middle.visibleBinaryStreamCount).toBeGreaterThanOrEqual(3);
+    await page.screenshot({ path: introShot("intro-mobile-binary-ascii.png") });
     await expectFixedViewport(page);
+    await touchSwipe(session, 195, 740, 170);
     await touchSwipe(session, 195, 740, 170);
     const partial = await waitForRevealingTerminal(page);
     await expect.poll(async () => (await introGraphics(page))?.introPhase).toBe("terminal");
     await expectFixedViewport(page);
+    await expectFullScreenSurface(page);
     expect(await page.evaluate(() => ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName || ""))).toBe(false);
-    await page.screenshot({ path: shots + "/intro-mobile-terminal.png" });
+    await page.screenshot({ path: introShot("intro-mobile-terminal.png") });
     expect(errors).toEqual([]);
     const samples = await introSamples(page);
     assertCompleteIntro(samples);
@@ -445,20 +578,22 @@ test("mouse, terminal, palette, tag and live search reach the same file; copy an
     await run(page, command);
     if (command === "cd posts") await pathname(page, "/posts");
   }
-  await pathname(page, article);
+  await expect(page.getByRole("region", { name: "Vim 编辑器" })).toBeVisible();
+  await expect(page.locator(".vim-buffer")).toContainText("欢迎来到");
+  await page.keyboard.type(":q");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("region", { name: "Vim 编辑器" })).toHaveCount(0);
+  await pathname(page, "/posts");
   await expect(page.locator(".prompt")).toContainText("~/posts");
-  await expect(
-    page.getByRole("heading", { name: articleTitle, exact: true }),
-  ).toBeVisible();
 
   await page
     .getByRole("button", { name: "搜索与命令面板", exact: true })
     .click();
   await page.getByRole("textbox", { name: "搜索页面或操作" }).fill("欢迎");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: new RegExp(articleTitle) })
-    .click();
+  const paletteFile = page.getByRole("region", { name: "SEARCH / 快速访问" })
+    .getByRole("button", { name: new RegExp(articleTitle) });
+  await reveal(page, paletteFile);
+  await paletteFile.click();
   await pathname(page, article);
   const tag = page.getByRole("link", { name: "#随笔", exact: true });
   await reveal(page, tag);
@@ -591,7 +726,7 @@ for (const viewport of [
       path: `${shots}/terminal-home-${viewport.width}x${viewport.height}.png`,
     });
 
-    await run(page, "open /posts/time-and-backpressure.md");
+    await openTerminal(page, longArticle);
     await pathname(page, longArticle);
     await expect(
       page.getByRole("heading", { name: longTitle, exact: true }),
@@ -743,19 +878,22 @@ test("real Three TSL text render targets boot, animate, and reboot without losin
       ),
     )
     .toBeGreaterThan(graphics.frames);
-  await page.evaluate(() => { (window as unknown as { __hadesdIntroSamples: IntroSample[] }).__hadesdIntroSamples = []; });
+  await page.evaluate(() => {
+    (window as unknown as { __hadesdIntroSamples: IntroSample[] }).__hadesdIntroSamples = [];
+    (window as unknown as { __hadesdBootFrames: Record<string, BootFrame> }).__hadesdBootFrames = {};
+  });
   await page.getByRole("button", { name: "[ reboot ]", exact: true }).click();
   await expect(stage).toHaveAttribute("data-stage-ready", "false");
   await expect(stage).toHaveAttribute("data-intro-phase", "boot");
   await expect(stage).toHaveAttribute("data-intro-progress", "0");
   await expect(stage).toHaveAttribute("data-reveal-step", "0");
-  await expect(page.locator(".stage-boot-status")).toBeVisible();
+  await expect(page.locator(".stage-boot-status")).toHaveCSS("clip-path", "inset(50%)");
   await expect.poll(async () => (await introGraphics(page))?.introPhase).toBe("boot");
-  await page.screenshot({ path: shots + "/terminal-reboot-dos.png" });
   await expect(stage).toHaveAttribute("data-intro-phase", "pullback", { timeout: 15000 });
   await expect(stage).toHaveAttribute("data-boot-progress", "80");
   await expect(stage).toHaveAttribute("data-intro-phase", "hero", { timeout: 15000 });
-  await page.getByRole("button", { name: "进入终端", exact: true }).click();
+  await saveBootFrames(page, "intro-reboot-boot");
+  await travelForward(page);
   await expect(stage).toHaveAttribute("data-intro-phase", "journey");
   const partial = await waitForRevealingTerminal(page);
   const samples = await introSamples(page);
@@ -776,7 +914,8 @@ test("real Three TSL text render targets boot, animate, and reboot without losin
   );
 });
 
-test("keyboard skip exits every intro phase with all terminal groups visible and no stale transition", async ({ page }) => {
+test("keyboard avoids hidden jumps while reduced motion makes every intro phase accessible", async ({ page }) => {
+  await mockIntroAccount(page);
   await openTerminal(page);
   const stage = page.locator(".terminal-stage");
   const phases = ["boot", "pullback", "hero", "journey", "resume", "penetrate", "reveal"];
@@ -788,17 +927,20 @@ test("keyboard skip exits every intro phase with all terminal groups visible and
     } else if (phase !== "boot") {
       await expect(stage).toHaveAttribute("data-intro-phase", "hero", { timeout: 15000 });
       if (phase !== "hero") {
-        await page.keyboard.press(phase === "journey" ? "PageDown" : "End");
+        if (phase === "journey") await page.keyboard.press("PageDown");
+        else await travelForward(page);
         await expect(stage).toHaveAttribute("data-intro-phase", phase, { timeout: 15000 });
       }
     }
     await expect(stage).toHaveAttribute("data-intro-phase", phase);
-    await page.getByRole("button", { name: "跳过片头，进入终端", exact: true }).focus();
     await page.keyboard.press(index % 2 === 0 ? "Enter" : "Escape");
+    await expect(stage).toHaveAttribute("data-stage-ready", "false");
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(stage).toHaveAttribute("data-stage-ready", "true");
     await expect(stage).toHaveAttribute("data-reveal-step", "7");
     await expect(page.locator(".stage-content")).not.toHaveAttribute("inert");
     await expect(page.locator(".terminal-input")).toHaveCSS("visibility", "visible");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
   }
   await page.waitForTimeout(2100);
   await expect(stage).toHaveAttribute("data-intro-phase", "terminal");
@@ -806,7 +948,7 @@ test("keyboard skip exits every intro phase with all terminal groups visible and
   await expect(page.locator(".terminal-output pre").last()).toHaveText("/");
 });
 
-test("display preferences migrate cleanly, restore themes on reload and preserve keyboard modal controls", async ({
+test("display preferences migrate cleanly, restore themes on reload and preserve inline keyboard controls", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -827,7 +969,7 @@ test("display preferences migrate cleanly, restore themes on reload and preserve
   await page.getByRole("button", { name: "荧绿", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "green");
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(page.getByRole("region", { name: "DISPLAY / 显示设置" })).toHaveCount(0);
   await page.screenshot({ path: shots + "/terminal-green-theme.png" });
   await page.reload();
   await ready(page);
@@ -847,16 +989,16 @@ test("display preferences migrate cleanly, restore themes on reload and preserve
   await page.screenshot({ path: shots + "/paper-theme.png" });
   await page.getByRole("textbox", { name: "博客命令" }).focus();
   await page.keyboard.press("Control+k");
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("region", { name: "SEARCH / 快速访问" })).toBeVisible();
   await expect(
     page.getByRole("textbox", { name: "搜索页面或操作" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   expect(
-    await page.evaluate(() => !!document.activeElement?.closest("dialog")),
+    await page.evaluate(() => !!document.activeElement?.closest("[data-terminal-program]")),
   ).toBe(true);
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(page.getByRole("region", { name: "SEARCH / 快速访问" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "博客命令" })).toBeFocused();
   expect(errors).toEqual([]);
 });

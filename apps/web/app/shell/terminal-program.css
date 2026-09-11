@@ -1,0 +1,13 @@
+.terminal-program{min-width:0;width:100%;box-sizing:border-box;color:var(--text-primary,var(--accent));font:13px/1.7 var(--font-mono);outline:none}
+.terminal-program-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px dashed var(--border);color:var(--accent);font-size:12px;letter-spacing:.04em}
+.terminal-program-heading>button,.terminal-program-command>button{font:inherit;color:var(--accent);border:1px solid var(--border);padding:3px 9px;cursor:pointer;background:transparent;white-space:nowrap}
+.terminal-program-heading>button:hover,.terminal-program-command>button:hover{border-color:var(--accent)}
+.terminal-program-body{min-width:0;overflow-wrap:anywhere}
+.terminal-program-footer{margin:0 16px;padding:8px 0 12px;border-top:1px dashed var(--border);font-size:11px;color:var(--text-muted)}
+.terminal-program-footer>p{margin:3px 0 8px;white-space:pre-wrap}
+.terminal-program-command{display:flex;align-items:center;gap:9px;color:var(--accent)}
+.terminal-program-command>input{font:13px/1.7 var(--font-mono);flex:1;min-width:0;color:var(--accent);background:transparent;border:0;border-bottom:1px solid var(--border);border-radius:0;padding:4px;outline:none}
+.terminal-program-command>input:focus-visible{border-bottom-color:var(--accent)}
+.terminal-program .palette-input{box-sizing:border-box;width:calc(100% - 32px);margin:16px}
+.community-comments>.terminal-program{margin-top:18px;border:1px dashed var(--border)}
+@media(max-width:600px){.terminal-program-heading{padding:8px}.terminal-program-footer{margin:0 8px}.terminal-program{font-size:12px}}

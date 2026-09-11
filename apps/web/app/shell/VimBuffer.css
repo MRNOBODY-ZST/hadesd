@@ -1,0 +1,17 @@
+.vim-buffer { display: flex; flex: 1; flex-direction: column; min-height: 0; outline: none; }
+.vim-header, .vim-status { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; color: var(--accent); font-size: 11px; }
+.vim-header { border-bottom: 1px solid var(--border); }
+.vim-header > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vim-viewport { flex: 1; min-height: 0; overflow: hidden; font: 13px/22px var(--font-mono); }
+.vim-lines { margin: 0; font: inherit; overflow: hidden; white-space: pre; }
+.vim-line { display: flex; height: 22px; }
+.vim-line-number { flex: 0 0 5ch; text-align: right; padding-right: 2ch; color: var(--text-muted); user-select: none; }
+.vim-cursor { color: var(--bg-screen); background: var(--accent); }
+.vim-insert { display: block; width: 100%; height: 100%; padding: 0; resize: none; border: 0; outline: none; background: transparent; color: inherit; font: inherit; caret-color: var(--accent); scrollbar-width: none; }
+.vim-insert::-webkit-scrollbar { display: none; }
+.vim-status { border-top: 1px solid var(--border); }
+.vim-message { min-height: 22px; font-size: 11px; line-height: 18px; color: var(--text-muted); }
+.vim-command { display: flex; gap: 8px; align-items: center; min-height: 28px; }
+.vim-command input { width: 100%; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: inherit; font: inherit; }
+.vim-actions { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 11px; padding-top: 6px; }
+.vim-actions button { min-height: 28px; }

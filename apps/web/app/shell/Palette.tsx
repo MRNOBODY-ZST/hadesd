@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { commands, navigationFor } from "@hadesd/terminal-core";
 import { useActions } from "./actions";
-import { Modal } from "./Modal";
+import { TerminalProgram } from "./TerminalProgram";
 import { usePreferences } from "./store";
 export function Palette({
   onCommand,
@@ -11,6 +11,10 @@ export function Palette({
   const { nodes, open } = useActions();
   const toggle = usePreferences((s) => s.toggle);
   const [q, setQ] = useState("");
+  function search(query = q) {
+    open({ route: query.trim() ? `/search?q=${encodeURIComponent(query.trim())}` : "/search", cwd: "/" });
+    toggle("paletteOpen", false);
+  }
   const matches = nodes
     .filter((n) =>
       `${n.title} ${n.path} ${n.summary}`
@@ -24,9 +28,14 @@ export function Palette({
     )
     .slice(0, 3);
   return (
-    <Modal
-      label="COMMAND PALETTE / 快速访问"
+    <TerminalProgram
+      label="SEARCH / 快速访问"
       onClose={() => toggle("paletteOpen", false)}
+      help="输入关键词后 Enter 全文搜索 · search 关键词 · :q 返回"
+      onCommand={command => {
+        if (command === "search" || command.startsWith("search ")) { search(command.slice(6).trim()); return "正在搜索…"; }
+        return "输入 search 关键词进行全文搜索，或 :q 返回。";
+      }}
     >
       <label className="sr-only" htmlFor="palette-query">
         搜索页面或操作
@@ -37,19 +46,12 @@ export function Palette({
         placeholder="前往页面，或查找操作…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
+        onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); event.stopPropagation(); search(); } }}
         data-autofocus
       />
       <div className="palette-results">
         <button
-          onClick={() => {
-            open({
-              route: q.trim()
-                ? `/search?q=${encodeURIComponent(q.trim())}`
-                : "/search",
-              cwd: "/",
-            });
-            toggle("paletteOpen", false);
-          }}
+          onClick={() => search()}
         >
           <span>⌕ {q.trim() ? `全文搜索 “${q.trim()}”` : "打开全文搜索"}</span>
           <small>SEARCH ↗</small>
@@ -86,6 +88,6 @@ export function Palette({
           <p>没有匹配的公开内容或操作。</p>
         )}
       </div>
-    </Modal>
+    </TerminalProgram>
   );
 }

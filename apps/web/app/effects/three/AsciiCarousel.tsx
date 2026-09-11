@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
-import { BufferAttribute, Group, MathUtils, MeshBasicNodeMaterial, PlaneGeometry, type Node } from "three/webgpu";
-import { abs, attribute, cos, float, Fn, length, max, mix, positionLocal, sin, step, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
-import type { createAsciiFace } from "./asciiFace";
+import { Group, InstancedBufferAttribute, MathUtils, MeshBasicNodeMaterial, PlaneGeometry, type Node } from "three/webgpu";
+import { abs, attribute, float, length, max, step, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { createCurledPanelPosition, type createAsciiFace } from "./asciiFace";
 import { MAC_SCREEN_HANDOFF } from "./screenProjection";
 import type { IntroPhase } from "../timeline";
 
@@ -13,21 +13,9 @@ type Props = {
 };
 const COUNT = 16, SEGMENT_ANGLE = Math.PI * 2 / COUNT;
 
-/**
- * Cylinder deformation, rounded tile mask and five-column scroll layout adapted
- * from Filip Kantedal / Shader Development Studio's Skyworks, commit 2eb7ad3.
- * https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx
- * HADESD shares geometry/materials, uses its Mac Face and joins the DOS stages.
- */
-function cylinderPosition(height: number, radius: number, curvature: Node<"float">) {
-  return Fn(() => {
-    const p = positionLocal, rotation = attribute<"float">("panelAngle", "float");
-    const angle = p.y.div(height).mul(SEGMENT_ANGLE).add(rotation);
-    const curved = vec3(p.x, sin(angle).mul(radius), cos(angle).mul(radius));
-    const flat = vec3(p.x, sin(rotation).mul(radius).add(cos(rotation).mul(p.y)),
-      cos(rotation).mul(radius).sub(sin(rotation).mul(p.y)));
-    return mix(flat, curved, curvature);
-  })();
+/** Curvature only varies along Y; extra columns cannot improve its silhouette. */
+export function createCarouselGeometry(width: number, height: number) {
+  return new PlaneGeometry(width, height, 1, 32);
 }
 
 function tileMask(transition: Node<"float">) {
@@ -37,65 +25,78 @@ function tileMask(transition: Node<"float">) {
   return step(distance, 0);
 }
 
+/**
+ * Cylinder and rounded tile layout adapted from Filip Kantedal / Shader
+ * Development Studio's Skyworks, commit 2eb7ad3. Four draw calls share one
+ * atlas: every tile carries the same Mac, with animated backgrounds, plus the
+ * two exact flat-screen handoffs. The final handoff remains the DOS screen.
+ * https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx
+ */
 export function AsciiCarousel({ width, height, face, bootMaterial, progress, phaseState }: Props) {
-  const main = useRef<Group>(null), center = useRef<Group>(null);
-  const sides = useRef<Array<Group | null>>([]);
+  const main = useRef<Group>(null);
   const radius = height * COUNT / (Math.PI * 2);
-  const firstCurvature = useMemo(() => uniform(0), []);
-  const lastCurvature = useMemo(() => uniform(0), []);
+  const motion = useMemo(() => ({ rotation: uniform(0), first: uniform(0), last: uniform(0) }), []);
   const resources = useMemo(() => {
-    const planes = Array.from({ length: COUNT }, (_, index) => {
-      const geometry = new PlaneGeometry(width, height, 50, 50);
-      geometry.setAttribute("panelAngle", new BufferAttribute(new Float32Array(geometry.getAttribute("position").count).fill(index * SEGMENT_ANGLE), 1));
-      return geometry;
+    const plane = createCarouselGeometry(width, height);
+    const sides = plane.clone();
+    const sidePlacement = [-2, -1, 1, 2].flatMap((column, i) => {
+      const rotation = MathUtils.seededRandom(i + 100) * Math.PI;
+      return Array.from({ length: COUNT }, (_, index) => [index * SEGMENT_ANGLE - rotation, column]).flat();
     });
+    sides.setAttribute("panelPlacement", new InstancedBufferAttribute(new Float32Array(sidePlacement), 2));
+    const center = plane.clone();
+    const centerPlacement = Array.from({ length: COUNT }, (_, index) => index)
+      .filter(index => index !== 0 && index !== 12).flatMap(index => [index * SEGMENT_ANGLE, 0]);
+    center.setAttribute("panelPlacement", new InstancedBufferAttribute(new Float32Array(centerPlacement), 2));
+    const placement = attribute<"vec2">("panelPlacement", "vec2");
+    const position = (angle: Node<"float">, curvature: Node<"float">, column: Node<"float"> = float(0)) =>
+      createCurledPanelPosition({ height, radius, angle: angle.add(motion.rotation), curvature })
+        .add(vec3(column.mul(width), 0, -radius));
+
     const material = new MeshBasicNodeMaterial();
-    material.name = "Skyworks cylinder / opaque rounded Mac Face tiles";
-    material.positionNode = cylinderPosition(height, radius, float(1));
-    // Black rounded borders write depth too. No transparent holes into the desk.
+    material.name = "cylinder / instanced Mac Face tiles";
+    material.positionNode = position(placement.x, float(1), placement.y);
+    // Black rounded borders write depth too, maintaining an opaque screen field.
     material.colorNode = vec4(face.colorNode.mul(tileMask(float(1))), 1);
-    const first = material.clone();
+    const sideMaterial = new MeshBasicNodeMaterial();
+    sideMaterial.name = "cylinder / instanced Mac faces with random backgrounds";
+    sideMaterial.positionNode = position(placement.x, float(1), placement.y);
+    sideMaterial.colorNode = vec4(face.sampleColor(uv(), placement.x.add(placement.y.mul(19))).mul(tileMask(float(1))), 1);
+    const first = new MeshBasicNodeMaterial();
     first.name = "Mac screen / first flattening ASCII tile";
-    first.positionNode = cylinderPosition(height, radius, firstCurvature);
-    first.colorNode = vec4(face.colorNode.mul(tileMask(firstCurvature)), 1);
+    first.positionNode = position(float(0), motion.first);
+    first.colorNode = vec4(face.colorNode.mul(tileMask(motion.first)), 1);
     const loading = bootMaterial.clone();
     loading.name = "DOS / final flattening cylinder tile";
     loading.transparent = false; loading.depthWrite = true;
-    loading.positionNode = cylinderPosition(height, radius, lastCurvature);
+    loading.positionNode = position(float(12 * SEGMENT_ANGLE), motion.last);
     const bootColor = bootMaterial.colorNode as Node<"vec4">;
-    loading.colorNode = vec4(bootColor.rgb.mul(bootColor.a).mul(tileMask(lastCurvature)), 1);
-    const sideConfig = [-2, -1, 1, 2].map((column, i) => ({ x: width * column, rotation: MathUtils.seededRandom(i + 100) * Math.PI }));
-    return { planes, material, first, loading, sideConfig };
-  }, [width, height, radius, face, firstCurvature, lastCurvature, bootMaterial]);
+    loading.colorNode = vec4(bootColor.rgb.mul(bootColor.a).mul(tileMask(motion.last)), 1);
+    return { plane, sides, center, material, sideMaterial, first, loading };
+  }, [width, height, radius, face, motion, bootMaterial]);
   useEffect(() => () => {
-    resources.planes.forEach(g => g.dispose());
-    resources.material.dispose(); resources.first.dispose(); resources.loading.dispose();
+    resources.plane.dispose(); resources.sides.dispose(); resources.center.dispose();
+    resources.material.dispose(); resources.sideMaterial.dispose(); resources.first.dispose(); resources.loading.dispose();
   }, [resources]);
 
   useFrame(() => {
     const raw = progress.current;
     const visible = phaseState.current === "journey";
-    // The Mac and first tile read the same frame's progress, even if the DOM's
-    // rounded percent has not changed. At the boundary their UVs are identical.
     if (main.current) main.current.visible = visible && raw >= MAC_SCREEN_HANDOFF;
     if (!visible) return;
     const roll = MathUtils.smootherstep(raw, MAC_SCREEN_HANDOFF, 1);
-    firstCurvature.value = MathUtils.clamp((raw - MAC_SCREEN_HANDOFF) / .1, 0, 1);
-    lastCurvature.value = 1 - MathUtils.clamp((roll - .96) / .04, 0, 1);
+    motion.first.value = MathUtils.clamp((raw - MAC_SCREEN_HANDOFF) / .1, 0, 1);
+    motion.last.value = 1 - MathUtils.clamp((roll - .96) / .04, 0, 1);
+    // A negative group X rotation adds to the (sin θ, cos θ) cylinder angle.
+    // At roll=1 the final index12 reaches 2π, exactly the original tangent plane.
+    motion.rotation.value = roll * SEGMENT_ANGLE * 4;
     if (main.current) main.current.rotation.z = -Math.sin(roll * Math.PI) * .15;
-    if (center.current) center.current.rotation.x = -roll * SEGMENT_ANGLE * 4;
-    sides.current.forEach((group, i) => {
-      if (group) group.rotation.x = -roll * Math.PI * .5 + resources.sideConfig[i]!.rotation;
-    });
   }, -.5);
 
   return <group name="ascii-screen-carousel" ref={main} visible={false}>
-    {resources.sideConfig.map((config, column) => <group key={config.x} ref={g => { sides.current[column] = g; }} position={[config.x, 0, -radius]}>
-      {resources.planes.map((geometry, index) => <mesh key={index} frustumCulled={false} geometry={geometry} material={resources.material} />)}
-    </group>)}
-    <group ref={center} position={[0, 0, -radius]}>
-      {resources.planes.map((geometry, index) => <mesh key={index} frustumCulled={false} geometry={geometry}
-        material={index === 0 ? resources.first : index === 12 ? resources.loading : resources.material} />)}
-    </group>
+    <instancedMesh name="scrambling-side-tiles" args={[resources.sides, resources.sideMaterial, COUNT * 4]} frustumCulled={false} />
+    <instancedMesh name="mac-face-tiles" args={[resources.center, resources.material, COUNT - 2]} frustumCulled={false} />
+    <mesh name="first-mac-handoff-tile" geometry={resources.plane} material={resources.first} frustumCulled={false} />
+    <mesh name="final-dos-handoff-tile" geometry={resources.plane} material={resources.loading} frustumCulled={false} />
   </group>;
 }

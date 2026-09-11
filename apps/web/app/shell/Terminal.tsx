@@ -21,6 +21,11 @@ import { useActions } from "./actions";
 import { usePreferences } from "./store";
 import type { PublicContent } from "@hadesd/contracts";
 import { ScreenPager } from "./ScreenPager";
+import { VimBuffer } from "./VimBuffer";
+import { loadBlogDraft } from "./blogEditor";
+import { Settings } from "./Settings";
+import { Palette } from "./Palette";
+import { AccountWorkspace, useOptionalAccount } from "../community/Account";
 import "./Terminal.css";
 export function Terminal({
   dispatchRef,
@@ -32,12 +37,35 @@ export function Terminal({
   const { cwd, nodes, open, data } = useActions();
   const location = useLocation();
   const preferences = usePreferences();
+  const account = useOptionalAccount();
+  const program = account?.view ? "account:" + account.view : preferences.settingsOpen ? "settings" : preferences.paletteOpen ? "palette" : "";
   const [input, setInput] = useState("");
   const [records, setRecords] = useState<
     { id: number; input: string; outputs: Output[] }[]
   >([]);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"route" | "output">("route");
+  const [buffer, setBuffer] = useState<Extract<Output, { type: "file" }> | null>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const previousProgram = useRef(program);
+  useEffect(() => {
+    if (account?.view) { preferences.toggle("settingsOpen", false); preferences.toggle("paletteOpen", false); }
+  }, [account?.view]);
+  useEffect(() => {
+    if (preferences.settingsOpen || preferences.paletteOpen) account?.close();
+  }, [preferences.settingsOpen, preferences.paletteOpen]);
+  useEffect(() => {
+    const previous = previousProgram.current; previousProgram.current = program;
+    if (!program && previous) {
+      const frame = requestAnimationFrame(() => {
+        if (buffer) {
+          const vim = document.querySelector<HTMLElement>('[data-terminal-program="vim"]');
+          (vim?.querySelector<HTMLElement>("textarea,input") ?? vim)?.focus({ preventScroll: true });
+        } else field.current?.focus({ preventScroll: true });
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [program, buffer]);
   const [selection, setSelection] = useState({
     start: 0,
     end: 0,
@@ -82,6 +110,9 @@ export function Terminal({
   const run = useCallback(
     async (command: string) => {
       if (!command.trim()) return;
+      if (buffer) return;
+      preferences.toggle("settingsOpen", false);
+      preferences.toggle("paletteOpen", false);
       task.current?.abort();
       const controller = new AbortController();
       task.current = controller;
@@ -126,7 +157,7 @@ export function Terminal({
             if (command === "reboot") window.dispatchEvent(new CustomEvent("hadesd:reboot"));
             else if (command === "display") preferences.toggle("settingsOpen", true);
             else if (command === "comments") window.dispatchEvent(new CustomEvent("hadesd:comments"));
-            else window.dispatchEvent(new CustomEvent("hadesd:account", { detail: { action: command } }));
+            else window.dispatchEvent(new CustomEvent("hadesd:account", { detail: { action: command === "mycomments" ? "comments" : command } }));
           },
           readFile: async (node, signal) => {
             if (!node.contentId)
@@ -157,6 +188,8 @@ export function Terminal({
         setRecords([]);
         setView("output");
       } else {
+        const file = result.find((r): r is Extract<Output, { type: "file" }> => r.type === "file");
+        if (file) { setBuffer(file); return; }
         setView(navigated ? "route" : "output");
         setRecords((old) =>
           [...old, { id: request, input: visibleCommand, outputs: result }].slice(
@@ -164,6 +197,7 @@ export function Terminal({
           ),
         );
       }
+      screenRef.current?.focus({ preventScroll: true });
     },
     [
       cwd,
@@ -177,6 +211,7 @@ export function Terminal({
       preferences.setCrt,
       preferences.setReader,
       replaceInput,
+      buffer,
     ],
   );
   useEffect(() => {
@@ -210,15 +245,16 @@ export function Terminal({
       const otherEditor = active instanceof HTMLElement && active !== field.current &&
         (active.isContentEditable || active.matches("input,textarea,select"));
       if (
-        matchMedia("(pointer: fine)").matches && !otherEditor &&
+        matchMedia("(pointer: fine)").matches && !otherEditor && !buffer && !program &&
         !document.querySelector("dialog[open]")
       )
-        field.current?.focus({ preventScroll: true });
+        screenRef.current?.focus({ preventScroll: true });
     };
     window.addEventListener("hadesd:boot-ready", focus);
     const type = (event: globalThis.KeyboardEvent) => {
       const target = event.target;
-      if (event.defaultPrevented || document.querySelector("dialog[open]"))
+      if (buffer || program || event.defaultPrevented || document.querySelector("dialog[open]") ||
+        (target instanceof Element && target.closest("[data-terminal-program]")))
         return;
       if (
         target instanceof HTMLElement &&
@@ -253,7 +289,7 @@ export function Terminal({
       window.removeEventListener("hadesd:boot-ready", focus);
       window.removeEventListener("keydown", type);
     };
-  }, [replaceInput]);
+  }, [replaceInput, buffer, program]);
   function keyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229)
       return;
@@ -355,7 +391,7 @@ export function Terminal({
   return (
     <section
       className="terminal"
-      aria-label="只读博客终端"
+      aria-label="博客终端"
       onClickCapture={(event) => {
         if (
           event.button !== 0 ||
@@ -385,20 +421,23 @@ export function Terminal({
         <Link to="/" aria-label="HADESD 首页">
           HADESD / TTY 01
         </Link>
-        <span>SESSION: GUEST</span>
+        <span>SESSION: {account?.user ? "@" + account.user.username : "GUEST"}</span>
         <span className="session-connected">● CONNECTED</span>
       </div>
-      <ScreenPager
+      <div className="terminal-route-screen" hidden={!!buffer && !program}>
+      <ScreenPager screenRef={screenRef} active={!buffer || !!program}
         resetKey={
-          view === "output"
+          program || (view === "output"
             ? (records.at(-1)?.id ?? "clear")
-            : location.pathname + location.search
+            : location.pathname + location.search)
         }
-        followEnd={view === "output"}
+        followEnd={view === "output" && !program}
       >
-        {view === "route" ? (
-          children
-        ) : (
+        <div className="terminal-route-content" hidden={view !== "route" || !!program}>{children}</div>
+        {program === "settings" && <Settings />}
+        {program === "palette" && <Palette onCommand={command => void run(command)} />}
+        {program.startsWith("account:") && <AccountWorkspace />}
+        {view !== "route" && !program && (
           <div className="terminal-output" role="log" aria-live="polite">
             {records.length ? (
               records.map((r) => (
@@ -425,7 +464,9 @@ export function Terminal({
           </div>
         )}
       </ScreenPager>
-      <div className="terminal-command-area">
+      </div>
+      {buffer && <div className="terminal-vim-screen" hidden={!!program}><VimBuffer key={buffer.node.path} path={buffer.node.path} markdown={buffer.text} identity={account?.user?.role === "ADMIN" ? account.user.id : undefined} loadDraft={account?.user?.role === "ADMIN" && buffer.node.contentId ? signal => loadBlogDraft(buffer.node.contentId!, signal) : undefined} onClose={() => { setBuffer(null); requestAnimationFrame(() => field.current?.focus({ preventScroll: true })); }} /></div>}
+      <div className="terminal-command-area" hidden={!!buffer || !!program}>
         {view === "output" && (
           <button
             className="terminal-output-return"
@@ -442,7 +483,7 @@ export function Terminal({
           }}
         >
           <label htmlFor="terminal-command" className="prompt">
-            <span>guest@hadesd</span>:{displayPath(cwd)}
+            <span>{account?.user?.username ?? "guest"}@hadesd</span>:{displayPath(cwd)}
             <b>$</b>
           </label>
           <div className="terminal-field" data-block-cursor={!hasSelection}>

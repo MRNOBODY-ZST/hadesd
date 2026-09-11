@@ -18,8 +18,7 @@ public class LocalStorage implements StoragePort {
   }
 
   private Path path(String key) {
-    if (!key.matches("[0-9a-f-]{36}")) throw Problem.bad("INVALID_STORAGE_KEY", "存储标识无效");
-    return root.resolve(key);
+    return root.resolve(StoragePort.validKey(key));
   }
 
   public Mono<Void> put(String key, byte[] bytes, String mime) {

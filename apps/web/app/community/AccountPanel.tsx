@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { BlogComment, Media, Page } from "@hadesd/contracts";
-import { Modal } from "../shell/Modal";
+import { TerminalProgram } from "../shell/TerminalProgram";
 import { useAccount, type AccountView } from "./Account";
 import { community, errorText, fileSize, fileUrl } from "./api";
 
@@ -41,11 +41,13 @@ function MyComments() {
   return <section aria-label="我的评论">{error && <p role="alert" className="community-error">{error}</p>}{!data && !error && <p role="status">读取评论中…</p>}{data?.items.length === 0 && <p>还没有发表过评论。</p>}<ul className="community-files">{data?.items.map(comment => <li key={comment.id}><div><small>{comment.createdAt.slice(0, 19).replace("T", " ")}</small><p className="community-comment-excerpt">{comment.body}</p><span className="community-hint">{comment.attachments.length} 个附件 · {comment.parentId ? "回复" : "评论"}</span></div></li>)}</ul>{data && <PageButtons data={data} onPage={setPage} />}</section>;
 }
 export default function AccountPanel({ initialView, onClose }: { initialView: AccountView; onClose: () => void }) {
-  const { user, setUser, logout } = useAccount();
+  const { user, setUser, logout, open } = useAccount();
   const [view, setView] = useState<AccountView>(initialView), [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [username, setUsername] = useState(""), [displayName, setDisplayName] = useState(user?.displayName || ""), [password, setPassword] = useState(""), [confirm, setConfirm] = useState(""), [currentPassword, setCurrentPassword] = useState("");
   const registering = view === "register", effective = user ? view : registering ? "register" : "login";
-  function switchView(next: AccountView) { setView(next); setError(""); setNotice(""); setPassword(""); setConfirm(""); setCurrentPassword(""); }
+  useEffect(() => { if (user) setDisplayName(user.displayName); }, [user?.id]);
+  useEffect(() => { setView(initialView); setError(""); setNotice(""); setPassword(""); setConfirm(""); setCurrentPassword(""); }, [initialView]);
+  function switchView(next: AccountView) { setView(next); open(next); setError(""); setNotice(""); setPassword(""); setConfirm(""); setCurrentPassword(""); }
   async function authenticate(event: FormEvent) {
     event.preventDefault(); setError(""); setNotice("");
     if (registering && password !== confirm) { setError("两次输入的密码不一致。"); return; }
@@ -56,7 +58,15 @@ export default function AccountPanel({ initialView, onClose }: { initialView: Ac
       const account = await community.login(username, password); setUser(account); setDisplayName(account.displayName); setPassword(""); setConfirm(""); setView("profile"); setNotice(registering ? "注册成功，已登录。" : "登录成功。");
     } catch (e) { if (registered) { setView("login"); setNotice("账户已创建，请重试登录。"); setConfirm(""); } setError(errorText(e)); } finally { setBusy(false); }
   }
-  return <Modal label="账户" onClose={onClose}><div className="community-panel">
+  return <TerminalProgram label="账户" onClose={onClose}
+    help={user ? "profile · files · comments · logout · :q / Esc / Ctrl+C 返回" : "login · register · Tab 切换字段 · :q / Esc / Ctrl+C 返回"}
+    onCommand={async command => {
+      if (busy) return "正在处理，请稍候。";
+      if (["login", "register", "profile", "files", "comments"].includes(command)) { switchView(command as AccountView); return command === "files" || command === "comments" ? "正在读取…" : "请填写下方账户字段。"; }
+      if (command === "logout") { setBusy(true); try { await logout(); return "已退出登录。"; } catch (error) { return errorText(error); } finally { setBusy(false); } }
+      return "输入 help 查看账户命令。密码请在密码字段中输入。";
+    }}><div className="community-panel">
+    <p className="community-program-path">account/{effective} {user ? `· @${user.username}` : "· guest"}</p>
     <nav className="community-tabs" aria-label="账户页面">{(user ? [["profile", "账户资料"], ["files", "我的文件"], ["comments", "我的评论"]] : [["login", "登录"], ["register", "注册"]]).map(([key, label]) => <button key={key} aria-current={effective === key ? "page" : undefined} disabled={busy} onClick={() => switchView(key as AccountView)}>{label}</button>)}</nav>
     {error && <p className="community-error" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     {!user ? <form className="community-form" onSubmit={event => void authenticate(event)}>
@@ -79,5 +89,5 @@ export default function AccountPanel({ initialView, onClose }: { initialView: Ac
       </>}
       <button disabled={busy} onClick={() => { setBusy(true); void logout().catch(e => setError(errorText(e))).finally(() => setBusy(false)); }}>退出登录</button>
     </>}
-  </div></Modal>;
+  </div></TerminalProgram>;
 }

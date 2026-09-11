@@ -12,15 +12,16 @@ flowchart LR
     Origin --> API[WebFlux 后端]
     API --> MySQL[(MySQL)]
     API --> Redis[(Redis Session)]
+    API --> MinIO[(私有 MinIO 附件桶)]
     Worker[发布 Worker] -->|内部鉴权 API| API
     Worker --> Static
 ```
 
-VPS 终止 TLS，沿 WireGuard 转发到内网源站。源站端口只绑定 WireGuard 地址，MySQL、Redis、backend 和 publisher 不映射公网端口。公开静态正文由 Nginx 直接读取；浏览器终端不连接服务器 Shell，生产不运行 Vite 开发服务器或请求时 Node SSR。
+VPS 终止 TLS，沿 WireGuard 转发到内网源站。源站端口只绑定 WireGuard 地址，MySQL、Redis、backend 和 publisher 不映射公网端口。正式 MinIO 不映射宿主机端口，附件经后端鉴权 API 访问。公开静态正文由 Nginx 直接读取；浏览器终端不连接服务器 Shell，生产不运行 Vite 开发服务器或请求时 Node SSR。
 
 代理配置来源为 [public-edge.conf](../infra/nginx/public-edge.conf) 与 [wireguard-origin.conf](../infra/nginx/wireguard-origin.conf)。VPS 重写 Host、协议与客户端地址，清除外部提供的 `Forwarded` 等头；源站只信任指定 WireGuard 对端。后端仅在生产覆盖配置中启用转发头处理，保持 Secure Session Cookie。`/api/v1/internal` 在两层代理均被拒绝，`snapshot.json`、`manifest.json`、`releases/`、`work/`、`staging/` 不作为公开 URL。
 
-Cloudflare 地址信任规则来自仓库中的 [cloudflare-realip.conf](../infra/nginx/cloudflare-realip.conf)，只接受受信任对端给出的访客地址；它本身不代表启用了 HTML 或媒体缓存。更改 DNS / CDN 行为时，需要重新验证撤稿、登录、CSRF 和真实客户端限流。
+Cloudflare 地址信任规则来自仓库中的 [cloudflare-realip.conf](../infra/nginx/cloudflare-realip.conf)，只接受受信任对端给出的访客地址；它本身不代表启用了 HTML 或媒体缓存。公开页面保持 `no-cache, must-revalidate`，后台保持 `no-store`；两者另加 `no-transform`，防止 CDN 注入与本站 CSP 冲突的统计脚本，依据 [Cloudflare Web Analytics 文档](https://developers.cloudflare.com/web-analytics/get-started/)。更改 DNS / CDN 行为时，需要重新验证撤稿、登录、CSRF 和真实客户端限流。
 
 ## 源站位置与启动
 
@@ -28,15 +29,17 @@ Cloudflare 地址信任规则来自仓库中的 [cloudflare-realip.conf](../infr
 | --- | --- |
 | 应用源码 | `/opt/hadesd/app` |
 | Compose 包装器 | `/usr/local/sbin/hadesd-compose` |
-| 配置组合 | `infra/compose/compose.yaml` + `compose.production.yaml` |
+| 配置组合 | `infra/compose/compose.yaml` + `compose.production.yaml` + `compose.minio.yaml`，已有 local 站点迁移完成后启用 |
 | 私有环境 | `/etc/hadesd/app.env`，root 所有、`0600` |
 | 管理员密码文件 | `/etc/hadesd/admin-password`，UID 1000 所有、`0400` |
-| 媒体 | `/srv/hadesd/media`，backend 所需目录可由 UID 1000 读写 |
+| 媒体 | 迁移后使用 MinIO 私有桶；原 `/srv/hadesd/media` 保留为迁移源 |
 | 发布内容 | `/srv/hadesd/published`，publisher 可写，backend / Nginx 只读 |
 | 当前版本 | `published/current -> releases/<releaseId>` |
 | 手动备份 | `/srv/hadesd/backups/<UTC时间戳>`，root 所有、`0700` |
 
 [生产 Compose 覆盖文件](../infra/compose/compose.production.yaml) 使用 `!override` 替换开发端口，需要 Docker Compose 2.24.4 或更新版本。`NGINX_CONFIG_FILE` 指向主机上的生产源站配置绝对路径；缺失时拒绝创建空目录来代替文件。凭据通过主机私有文件与容器环境传入，不放入 Git 或命令参数。
+
+仓库中的正式包装器按上述顺序加载三个文件；MinIO 根凭据与独立应用凭据均保存在 `/etc/hadesd/app.env`。生产不加载仅供本地调试的 `compose.minio.local.yaml`。**已有 local 站点不能只更新包装器就重建 backend**：先在同一 Compose 项目中临时叠加 MinIO 配置，仅启动 `minio` / `minio-init`；冻结业务写入并按仍有效的 local 配置备份，再用新版后端的 `StorageTransfer` 执行 local→S3 预检、复制、再次预检。确认 `pending=0`、`alreadyPresent=examined` 后，才持久切换包装器并重建 backend。具体步骤见 [生产迁移与备份说明](../infra/deploy/README.md)。
 
 [服务单元](../infra/deploy/hadesd.service) 安装为 `hadesd.service`，依赖 Docker 与 `wg-quick@wg-hades.service`。它通过包装器执行 Compose，启动时等待健康检查，停止时保留容器数据卷。单元是 oneshot，`active (exited)` 只说明启动命令完成，容器是否健康仍看 Compose：
 
@@ -92,5 +95,7 @@ sudo /opt/hadesd/app/infra/deploy/backup-origin.sh
 ```
 
 运行前需要停止写作、评论、上传、发布和清理等写入，保持静默窗口。备份包含完整应用数据库、媒体、保留发布目录、当前清单及私有配置；Redis Session 不随内容恢复。失败保留现场且不生成 `COMPLETE`，不清原数据。恢复到空数据库与新数据目录，验证账户及迁移记录后才启动业务；**不要通过 bootstrap 覆盖迁移来的管理员**。
+
+S3 模式产生新写入后，如需回退 local，必须先停写，将当前数据库引用的全部附件导出到新的独立目录并校验，再同步切换存储配置和 `MEDIA_ROOT`；不能直接指向迁移前的旧媒体目录。
 
 本次临时构建代理的进程、监听与 Docker 代理配置均已移除，随后真实冻结快照构建和 HTTPS 验收通过。应用运行和发布不依赖临时代理；未来重建镜像仍需正常访问镜像及依赖仓库。私有配置、SSH 凭据、证书私钥及数据库转储不进入仓库。

@@ -92,11 +92,11 @@ async function visibleOnScreen(page: Page, target: Locator) {
 async function reveal(page: Page, target: Locator) {
   await expect(target).toBeAttached();
   // Use terminal controls, never scrollIntoView, so a broken pager cannot pass this suite.
-  const command = page.getByRole("textbox", { name: "博客命令", exact: true });
-  await command.focus();
+  const pager = page.getByRole("region", { name: "终端屏幕", exact: true });
+  await pager.focus();
   while ((await screenNumber(page)) > 1) {
     const before = await screenNumber(page);
-    await command.press("PageUp");
+    await pager.press("PageUp");
     await expect(page.locator(".screen-pager")).toHaveAttribute("data-page", String(before - 1));
   }
   const count = Number(await page.locator(".screen-pager").getAttribute("data-pages"));
@@ -104,15 +104,24 @@ async function reveal(page: Page, target: Locator) {
     if (await visibleOnScreen(page, target)) return;
     if (await page.getByRole("button", { name: "下一屏", exact: true }).isDisabled()) break;
     const before = await screenNumber(page);
-    await command.press("PageDown");
+    await pager.press("PageDown");
     await expect(page.locator(".screen-pager")).toHaveAttribute("data-page", String(before + 1));
   }
   expect(await visibleOnScreen(page, target), "control must fit on an actual fixed terminal screen").toBe(true);
 }
-async function accountDialog(page: Page) {
+async function fillOnScreen(page: Page, target: Locator, value: string) {
+  await reveal(page, target);
+  await target.fill(value);
+}
+async function clickOnScreen(page: Page, target: Locator) {
+  await reveal(page, target);
+  await target.click();
+}
+async function accountProgram(page: Page) {
   await page.getByRole("button", { name: "账户", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "账户", exact: true });
+  const dialog = page.getByRole("region", { name: "账户", exact: true });
   await expect(dialog).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   return dialog;
 }
 async function commentRow(page: Page, id: string) {
@@ -152,22 +161,22 @@ async function fixedScreen(page: Page) {
   expect(geometry.scroll).toBe(0);
 }
 
-test("reader registers, signs out, and signs back in through the account dialog", async ({ page }) => {
+test("reader registers, signs out, and signs back in through the inline account program", async ({ page }) => {
   const account = identity();
   await enterTerminal(page);
-  let dialog = await accountDialog(page);
-  await dialog.getByRole("navigation", { name: "账户页面" }).getByRole("button", { name: "注册", exact: true }).click();
-  await dialog.getByLabel("用户名", { exact: true }).fill(account.username);
+  let dialog = await accountProgram(page);
+  await clickOnScreen(page, dialog.getByRole("navigation", { name: "账户页面" }).getByRole("button", { name: "注册", exact: true }));
+  await fillOnScreen(page, dialog.getByLabel("用户名", { exact: true }), account.username);
   await dialog.getByLabel("用户名", { exact: true }).press("Tab");
   await expect(dialog.getByLabel("显示名称", { exact: true })).toBeFocused();
-  await dialog.getByLabel("显示名称", { exact: true }).fill(account.displayName);
-  await dialog.getByLabel("密码", { exact: true }).fill(account.password);
-  await dialog.getByLabel("确认密码", { exact: true }).fill("a-different-password");
-  await dialog.getByRole("button", { name: "注册并登录", exact: true }).click();
+  await fillOnScreen(page, dialog.getByLabel("显示名称", { exact: true }), account.displayName);
+  await fillOnScreen(page, dialog.getByLabel("密码", { exact: true }), account.password);
+  await fillOnScreen(page, dialog.getByLabel("确认密码", { exact: true }), "a-different-password");
+  await clickOnScreen(page, dialog.getByRole("button", { name: "注册并登录", exact: true }));
   await expect(dialog.getByRole("alert")).toHaveText("两次输入的密码不一致。");
-  await dialog.getByLabel("确认密码", { exact: true }).fill(account.password);
+  await fillOnScreen(page, dialog.getByLabel("确认密码", { exact: true }), account.password);
   const registered = page.waitForResponse(response => response.url().endsWith(api + "/auth/register") && response.request().method() === "POST");
-  await dialog.getByRole("button", { name: "注册并登录", exact: true }).click();
+  await clickOnScreen(page, dialog.getByRole("button", { name: "注册并登录", exact: true }));
   expect((await registered).status()).toBe(201);
   await expect(dialog.getByRole("status")).toHaveText("注册成功，已登录。");
   await expect.poll(async () => (await page.request.get(api + "/auth/me")).status()).toBe(200);
@@ -177,12 +186,12 @@ test("reader registers, signs out, and signs back in through the account dialog"
   expect((await page.request.get(api + "/auth/me")).status()).toBe(200);
   await run(page, "logout");
   await expect.poll(async () => (await page.request.get(api + "/auth/me")).status()).toBe(401);
-  dialog = await accountDialog(page);
-  await dialog.getByRole("navigation", { name: "账户页面" }).getByRole("button", { name: "登录", exact: true }).click();
-  await dialog.getByLabel("用户名", { exact: true }).fill(account.username);
-  await dialog.getByLabel("密码", { exact: true }).fill(account.password);
+  dialog = await accountProgram(page);
+  await clickOnScreen(page, dialog.getByRole("navigation", { name: "账户页面" }).getByRole("button", { name: "登录", exact: true }));
+  await fillOnScreen(page, dialog.getByLabel("用户名", { exact: true }), account.username);
+  await fillOnScreen(page, dialog.getByLabel("密码", { exact: true }), account.password);
   const loggedIn = page.waitForResponse(response => response.url().endsWith(api + "/auth/login") && response.request().method() === "POST");
-  await dialog.getByRole("button", { name: "登录账户", exact: true }).click();
+  await clickOnScreen(page, dialog.getByRole("button", { name: "登录账户", exact: true }));
   expect((await loggedIn).status()).toBe(200);
   await expect(dialog.getByRole("status")).toHaveText("登录成功。");
   await expect.poll(async () => (await page.request.get(api + "/auth/me")).status()).toBe(200);
@@ -197,7 +206,7 @@ test("my files uploads, downloads and deletes a private attachment using the UI"
     await enterTerminal(page);
     await expect(page.getByRole("button", { name: "账户", exact: true })).toHaveText(`[ ${account.displayName} ]`);
     await page.getByRole("button", { name: "我的文件", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "账户", exact: true });
+    const dialog = page.getByRole("region", { name: "账户", exact: true });
     await expect(dialog.getByRole("region", { name: "我的文件", exact: true })).toBeVisible();
     const uploaded = page.waitForResponse(response => response.url().endsWith(api + "/account/files") && response.request().method() === "POST");
     await dialog.getByLabel("上传文件", { exact: true }).setInputFiles({ name: filename, mimeType: "image/png", buffer: png });
@@ -242,10 +251,10 @@ test("reader posts Markdown with an attachment, replies, edits and removes the c
     const compose = comments.getByRole("button", { name: "发表评论", exact: true });
     await reveal(page, compose);
     await compose.click();
-    const composer = page.getByRole("dialog", { name: "发表评论", exact: true });
+    const composer = page.getByRole("region", { name: "发表评论", exact: true });
     await expect(composer).toBeVisible();
     const editor = composer.getByRole("textbox", { name: "评论内容", exact: true });
-    await editor.fill(`${marker}\n\n**Markdown 生效**`);
+    await fillOnScreen(page, editor, `${marker}\n\n**Markdown 生效**`);
     const articleScreen = await screenNumber(page);
     await editor.press("PageDown");
     await expect(editor).toBeFocused();
@@ -259,7 +268,7 @@ test("reader posts Markdown with an attachment, replies, edits and removes the c
     const endpoint = `${api}/public/contents/${content.id}/comments`;
     const posted = page.waitForResponse(response => response.url().endsWith(endpoint) && response.request().method() === "POST");
     const submit = composer.getByRole("button", { name: "发表评论", exact: true });
-    await submit.click();
+    await clickOnScreen(page, submit);
     const postedResponse = await posted;
     expect(postedResponse.status()).toBe(201);
     const parent = await postedResponse.json() as Comment;
@@ -273,12 +282,12 @@ test("reader posts Markdown with an attachment, replies, edits and removes the c
     const replyButton = parentRow.getByRole("button", { name: "回复", exact: true });
     await reveal(page, replyButton);
     await replyButton.click();
-    const replyComposer = page.getByRole("dialog", { name: "回复评论", exact: true });
+    const replyComposer = page.getByRole("region", { name: "回复评论", exact: true });
     await expect(replyComposer).toBeVisible();
-    await replyComposer.getByRole("textbox", { name: "评论内容", exact: true }).fill(`回复 ${marker}`);
+    await fillOnScreen(page, replyComposer.getByRole("textbox", { name: "评论内容", exact: true }), `回复 ${marker}`);
     const replied = page.waitForResponse(response => response.url().endsWith(endpoint) && response.request().method() === "POST");
     const replySubmit = replyComposer.getByRole("button", { name: "发表回复", exact: true });
-    await replySubmit.click();
+    await clickOnScreen(page, replySubmit);
     const replyResponse = await replied;
     expect(replyResponse.status()).toBe(201);
     const reply = await replyResponse.json() as Comment;
@@ -291,12 +300,13 @@ test("reader posts Markdown with an attachment, replies, edits and removes the c
     const editButton = parentRow.getByRole("button", { name: /^编辑(?:评论)?$/ });
     await reveal(page, editButton);
     await editButton.click();
-    const editComposer = page.getByRole("dialog", { name: "编辑评论", exact: true });
+    const editComposer = page.getByRole("region", { name: "编辑评论", exact: true });
     await expect(editComposer).toBeVisible();
-    await editComposer.getByRole("textbox", { name: "评论内容", exact: true }).fill(`已修改 ${marker}`);
+    await fillOnScreen(page, editComposer.getByRole("textbox", { name: "评论内容", exact: true }), `已修改 ${marker}`);
     const edited = page.waitForResponse(response => response.url().endsWith(`${api}/account/comments/${parent.id}`) && response.request().method() === "PUT");
-    const save = editComposer.getByRole("button", { name: "保存修改", exact: true });
-    await save.click();
+    const saveCommand = editComposer.getByRole("textbox", { name: "程序命令", exact: true });
+    await fillOnScreen(page, saveCommand, ":wq");
+    await saveCommand.press("Enter");
     expect((await edited).status()).toBe(200);
     await expect(parentRow).toContainText(`已修改 ${marker}`);
     await page.reload();

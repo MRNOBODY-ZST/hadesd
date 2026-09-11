@@ -1,10 +1,12 @@
 package sh.hades.daemon.media;
 
 import java.net.URI;
+import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
+import sh.hades.daemon.shared.Problem;
 import software.amazon.awssdk.core.async.*;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.*;
@@ -27,6 +29,8 @@ public class S3Storage implements StoragePort, AutoCloseable {
     var builder =
         S3AsyncClient.builder()
             .region(Region.of(region))
+            .overrideConfiguration(c -> c.apiCallTimeout(Duration.ofSeconds(60))
+                .apiCallAttemptTimeout(Duration.ofSeconds(30)))
             .serviceConfiguration(
                 S3Configuration.builder().pathStyleAccessEnabled(pathStyle).build());
     if (!endpoint.isBlank()) builder.endpointOverride(URI.create(endpoint));
@@ -39,7 +43,7 @@ public class S3Storage implements StoragePort, AutoCloseable {
                 client.putObject(
                     PutObjectRequest.builder()
                         .bucket(bucket)
-                        .key(key)
+                        .key(StoragePort.validKey(key))
                         .contentType(mime)
                         .ifNoneMatch("*")
                         .build(),
@@ -52,24 +56,27 @@ public class S3Storage implements StoragePort, AutoCloseable {
     return Mono.fromFuture(
             () ->
                 client.getObject(
-                    GetObjectRequest.builder().bucket(bucket).key(key).build(),
+                    GetObjectRequest.builder().bucket(bucket).key(StoragePort.validKey(key)).build(),
                     AsyncResponseTransformer.toBytes()))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-        .map(b -> b.asByteArray());
+        .map(b -> b.asByteArray())
+        .onErrorMap(S3Exception.class,
+            e -> e.statusCode() == 404 ? Problem.missing("附件不存在") : e);
   }
 
   public Mono<Boolean> exists(String key) {
     return Mono.fromFuture(
-            () -> client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build()))
+            () -> client.headObject(HeadObjectRequest.builder().bucket(bucket).key(StoragePort.validKey(key)).build()))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
         .map(r -> true)
-        .onErrorResume(NoSuchKeyException.class, e -> Mono.just(false));
+        .onErrorResume(S3Exception.class,
+            e -> e.statusCode() == 404 ? Mono.just(false) : Mono.error(e));
   }
 
   public Mono<Void> delete(String key) {
     return Mono.fromFuture(
             () ->
-                client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build()))
+                client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(StoragePort.validKey(key)).build()))
         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
         .then();
   }

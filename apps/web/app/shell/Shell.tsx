@@ -9,8 +9,6 @@ import {
 import { usePreferences } from "./store";
 import { ActionsContext } from "./actions";
 import { Terminal } from "./Terminal";
-import { Settings } from "./Settings";
-import { Palette } from "./Palette";
 import { TerminalStage } from "../effects/TerminalStage";
 import styles from "./Shell.module.css";
 import { AccountProvider, AccountBar } from "../community/Account";
@@ -84,14 +82,6 @@ export function Shell({
           </noscript>
         </div>
       </TerminalStage>
-      {p.settingsOpen && <Settings />}
-      {p.paletteOpen && (
-        <Palette
-          onCommand={(command) => {
-            dispatchRef.current?.(command);
-          }}
-        />
-      )}
     </ActionsContext></AccountProvider>
   );
 }

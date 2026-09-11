@@ -7,11 +7,14 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import type { CrtLevel, Theme } from "@hadesd/contracts";
 import {
   clampProgress,
+  bootProgressAt,
+  bootSegmentsAt,
   easeJourney,
   createRevealSchedule,
   isTimedPhase,
@@ -73,6 +76,7 @@ export function TerminalStage({
   const destination = useRef(0);
   const animation = useRef<number | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
+  const hero = useRef<HTMLElement>(null);
   const initialized = useRef(false);
   const enabled = mounted && level !== "off" && !failed;
   const activeRenderer =
@@ -159,9 +163,28 @@ export function TerminalStage({
     const update = () => setReducedMotion(media.matches);
     update();
     media.addEventListener("change", update);
+    let pointerFrame: number | null = null;
+    let pointerPosition = { x: 0, y: 0 };
     const move = (event: PointerEvent) => {
       pointer.current.x = (event.clientX / innerWidth) * 2 - 1;
       pointer.current.y = 1 - (event.clientY / innerHeight) * 2;
+      pointerPosition = { x: event.clientX, y: event.clientY };
+      if (media.matches || pointerFrame !== null || !hero.current || progress.current >= 0.32) return;
+      pointerFrame = requestAnimationFrame(() => {
+        pointerFrame = null;
+        const glyphs = [...hero.current?.querySelectorAll<HTMLElement>(".stage-hero-glyph") || []];
+        const bounds = glyphs.map(glyph => glyph.getBoundingClientRect());
+        glyphs.forEach((glyph, index) => {
+          const rect = bounds[index]!;
+          const dx = pointerPosition.x - rect.left - rect.width / 2;
+          const dy = pointerPosition.y - rect.top - rect.height / 2;
+          const proximity = Math.max(0, 1 - Math.hypot(dx, dy) / 280);
+          glyph.style.setProperty("--glyph-x", `${(Math.max(-5, Math.min(5, dx * 0.045)) * proximity).toFixed(2)}px`);
+          glyph.style.setProperty("--glyph-y", `${(Math.max(-4, Math.min(4, dy * 0.045)) * proximity).toFixed(2)}px`);
+          glyph.style.setProperty("--glyph-tilt", `${(Math.max(-2, Math.min(2, dx * 0.018)) * proximity).toFixed(2)}deg`);
+          glyph.style.setProperty("--glyph-glow", (0.16 + proximity * 0.4).toFixed(2));
+        });
+      });
     };
     const reboot = () => {
       if (animation.current !== null) cancelAnimationFrame(animation.current);
@@ -185,6 +208,7 @@ export function TerminalStage({
       window.removeEventListener("pointermove", move);
       window.removeEventListener("hadesd:reboot", reboot);
       if (animation.current !== null) cancelAnimationFrame(animation.current);
+      if (pointerFrame !== null) cancelAnimationFrame(pointerFrame);
     };
   }, [changePhase]);
 
@@ -204,7 +228,7 @@ export function TerminalStage({
       phaseProgress.current = next;
       setPhasePercent(Math.floor(next * 100));
       if (phase === "boot" || phase === "resume") {
-        const boot = phase === "boot" ? next * 0.8 : 0.8 + next * 0.2;
+        const boot = phase === "boot" ? bootProgressAt(elapsed) : 0.8 + next * 0.2;
         bootProgress.current = boot;
         setBootPercent(Math.floor(boot * 100));
       }
@@ -272,7 +296,8 @@ export function TerminalStage({
     const keyboard = (event: KeyboardEvent) => {
       if (phaseRef.current === "terminal" || event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        finish();
+        event.preventDefault();
+        event.stopImmediatePropagation();
         return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey || event.key === "Tab")
@@ -284,7 +309,6 @@ export function TerminalStage({
       if (event.key === "Enter" || event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        finish();
         return;
       }
       const delta = keyStep(event.key, event.shiftKey);
@@ -312,7 +336,7 @@ export function TerminalStage({
       window.removeEventListener("touchend", touchEnd);
       window.removeEventListener("keydown", keyboard, true);
     };
-  }, [advance, finish]);
+  }, [advance]);
 
   const heroOpacity = phase === "pullback"
     ? clampProgress((phasePercent / 100 - 0.5) / 0.5)
@@ -326,6 +350,7 @@ export function TerminalStage({
       data-intro-phase={phase}
       data-intro-progress={percent}
       data-boot-progress={bootPercent}
+      data-boot-segment={phase === "boot" ? bootSegmentsAt(phasePercent / 100).segment : undefined}
       data-phase-progress={phasePercent}
       data-reveal-step={revealStep}
       data-renderer={activeRenderer}
@@ -333,17 +358,11 @@ export function TerminalStage({
       data-stage-theme={theme}
     >
       <div className="stage-ambient" aria-hidden="true" />
+      <div className="stage-crt-startup" aria-hidden="true"><div className="stage-crt-startup-screen" /></div>
       <div className="stage-masthead">
         <span>
           HADESD<span className="stage-dot">®</span>
         </span>
-        <span>PERSONAL COMPUTING / EST. 2026</span>
-      </div>
-      <div className="stage-physical-frame" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <i />
       </div>
       <div
         className="stage-content"
@@ -396,6 +415,7 @@ export function TerminalStage({
       )}
       {heroVisible && (
         <section
+          ref={hero}
           className="stage-hero"
           aria-label="个人计算机介绍"
           style={{
@@ -404,43 +424,24 @@ export function TerminalStage({
           }}
           inert={!heroInteractive ? true : undefined}
         >
-          <p className="stage-hero-eyebrow">PERSONAL COMPUTING</p>
-          <h1>
-            从一行代码，
-            <br />
-            到一个完整世界。
+          <h1 aria-label="让想象，接通现实。">
+            {["让想象，", "接通现实。"].map((line, row) => (
+              <span className="stage-hero-line" aria-hidden="true" key={line}>
+                {[...line].map((character, index) => (
+                  <span className="stage-hero-glyph" key={index} style={{ "--glyph-order": row * 4 + index } as CSSProperties}>
+                    {character}
+                  </span>
+                ))}
+              </span>
+            ))}
           </h1>
-          <p className="stage-hero-copy">
-            拆开硬件，理解每一次运转。
-            <br />
-            写下软件，让想法在现实中发生。
+          <p className="stage-scroll-hint">
+            <span>滚动进入这台电脑</span>
+            <svg className="stage-scroll-arrow" aria-hidden="true" focusable="false" viewBox="0 0 20 36">
+              <path d="M10 2C9 11 11 20 10 32M3 24L10 32L17 24" />
+            </svg>
           </p>
-          <button className="stage-enter" onClick={() => advance(1)}>
-            进入终端 <span aria-hidden="true">↗</span>
-          </button>
         </section>
-      )}
-      {heroVisible && (
-        <p
-          className="stage-scroll-hint"
-          style={{ opacity: heroOpacity }}
-          inert={!heroInteractive ? true : undefined}
-        >
-          <span aria-hidden="true">↓</span> 滚动进入这台电脑{" "}
-          <span className="stage-scroll-keys">/ SCROLL TO EXPLORE</span>
-        </p>
-      )}
-      {phase === "journey" && (
-        <div className="stage-journey-status" aria-live="off">
-          <span>
-            {percent < 35
-              ? "靠近个人计算机"
-              : percent < 75
-                ? "穿过电路与指令"
-                : "返回启动屏幕"}
-          </span>
-          <span>{String(percent).padStart(3, "0")} / 100</span>
-        </div>
       )}
       {["pullback", "resume", "penetrate", "reveal"].includes(phase) && (
         <p className="stage-phase-status" role="status" aria-live="polite">
@@ -450,33 +451,8 @@ export function TerminalStage({
                 : `正在建立终端 ${revealStep} / ${REVEAL_GROUP_COUNT}`}
         </p>
       )}
-      {!ready && (
-        <button
-          className="stage-skip"
-          onClick={finish}
-          aria-label="跳过片头，进入终端"
-        >
-          SKIP INTRO <span aria-hidden="true">↵</span>
-        </button>
-      )}
-      <div className="stage-base" aria-hidden="true">
-        <span>
-          <i />{" "}
-          {ready
-            ? "SYSTEM ONLINE"
-            : phase === "boot" || phase === "resume"
-              ? "BOOTING HADESD"
-              : "BUILT WITH CURIOSITY"}
-        </span>
-        <span>{ready ? "A PERSONAL DAEMON." : "HARDWARE × SOFTWARE"}</span>
-        <span>
-          {activeRenderer === "initializing"
-            ? "DISPLAY INIT"
-            : activeRenderer.toUpperCase()}
-        </span>
-      </div>
       <noscript>
-        <style>{`.terminal-stage{position:relative!important;height:auto!important;overflow:visible!important;padding:30px!important}.stage-content{position:relative!important;inset:auto!important;opacity:1!important;pointer-events:auto!important}.stage-phase-status,.stage-boot-status,.stage-hero,.stage-scroll-hint,.stage-journey-status,.stage-skip,.stage-physical-frame,.stage-masthead,.stage-base,.stage-ambient,.stage-graphics{display:none!important}html,body{height:auto!important;overflow:auto!important}`}</style>
+        <style>{`.terminal-stage{position:relative!important;height:auto!important;overflow:visible!important;padding:30px!important}.stage-content{position:relative!important;inset:auto!important;opacity:1!important;pointer-events:auto!important}.stage-phase-status,.stage-boot-status,.stage-hero,.stage-scroll-hint,.stage-masthead,.stage-ambient,.stage-graphics,.stage-crt-startup{display:none!important}html,body{height:auto!important;overflow:auto!important}`}</style>
       </noscript>
     </div>
   );

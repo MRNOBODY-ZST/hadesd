@@ -20,6 +20,20 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+it("keeps a multiline form field reachable when it crosses a normal page boundary", () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function(this: HTMLElement) { return this.id === "reply-body" ? 180 : 22; });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+    return { top: this.id === "reply-body" ? 180 : 0, left: 0, width: 600, height: this.id === "reply-body" ? 180 : 22, bottom: this.id === "reply-body" ? 360 : 22, right: 600, x: 0, y: 0, toJSON: () => ({}) };
+  });
+  render(<ScreenPager><textarea id="reply-body" aria-label="reply" /></ScreenPager>);
+  fireEvent(window, new CustomEvent("hadesd:page", { detail: { anchor: "reply-body" } }));
+  const field = screen.getByRole("textbox", { name: "reply" });
+  expect(field.getAttribute("tabindex")).not.toBe("-1");
+  const transform = document.querySelector<HTMLElement>(".screen-content")!.style.transform;
+  const offset = Number(transform.match(/-([0-9.]+)px/u)?.[1] ?? 0);
+  expect(180 - offset).toBeGreaterThanOrEqual(0);
+  expect(180 - offset + 180).toBeLessThanOrEqual(220);
+});
 it("pages a bounded terminal with keys and buttons while the wheel never changes screens", () => {
   const { container } = render(
     <ScreenPager>

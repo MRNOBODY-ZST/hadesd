@@ -8,6 +8,10 @@ import sh.hades.daemon.auth.BootstrapAdmin;
 @SpringBootApplication
 public class DaemonApplication {
   public static void main(String[] args) throws Exception {
+    if (Arrays.asList(args).contains("--storage-transfer")) {
+      sh.hades.daemon.media.StorageTransfer.run(args);
+      return;
+    }
     if (Arrays.asList(args).contains("--bootstrap-admin")) {
       BootstrapAdmin.run();
       return;

@@ -11,10 +11,14 @@ export function ScreenPager({
   children,
   resetKey = "",
   followEnd = false,
+  active = true,
+  screenRef,
 }: {
   children: ReactNode;
   resetKey?: string | number;
   followEnd?: boolean;
+  active?: boolean;
+  screenRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -70,10 +74,14 @@ export function ScreenPager({
         }
       });
       const line = parseFloat(getComputedStyle(body).lineHeight) || 22;
-      // One line overlaps at page boundaries, so a wrapped line/image never disappears in a crop.
+      // Overlap whole form controls, so a textarea crossing a page boundary
+      // is fully visible (and keyboard reachable) on at least one screen.
+      const overlap = Array.from(body.querySelectorAll<HTMLElement>("input,textarea,select,button"))
+        .filter(element => !element.closest("[hidden]"))
+        .reduce((height, element) => Math.max(height, Math.min(element.offsetHeight, frame.clientHeight - line)), line);
       const step = Math.max(
         line,
-        Math.floor((frame.clientHeight - line) / line) * line,
+        Math.floor((frame.clientHeight - overlap) / line) * line,
       );
       const pages = Math.max(
         1,
@@ -91,6 +99,9 @@ export function ScreenPager({
           pendingAnchor.current = null;
         }
       }
+      // An anchor request and a queued DOM measurement can run in the same frame,
+      // before React commits. Keep the next measurement on the requested page.
+      currentPage.current = nextPage;
       setPage(nextPage);
       // Child components can add controls without changing this component's props or page count.
       focus(nextPage, step);
@@ -137,7 +148,7 @@ export function ScreenPager({
   useEffect(() => {
     const available = (target: EventTarget | null) => {
       const frame = viewport.current;
-      if (!frame || frame.closest("[inert]") || document.querySelector("dialog[open]")) return false;
+      if (!active || !frame || frame.closest("[inert],[hidden]") || document.querySelector("dialog[open]")) return false;
       const owner = frame.closest(".terminal");
       const source = target instanceof Element ? target.closest(".terminal") : null;
       return !source || !owner || owner === source;
@@ -174,7 +185,7 @@ export function ScreenPager({
       window.removeEventListener("keydown", handler);
       window.removeEventListener("hadesd:page", requested);
     };
-  }, [turn, metrics.step, jump]);
+  }, [turn, metrics.step, jump, active]);
   useEffect(() => {
     updateFocus.current?.(page, metrics.step);
   }, [page, metrics, children]);
@@ -195,6 +206,16 @@ export function ScreenPager({
   return (
     <div
       className="screen-pager"
+      ref={screenRef}
+      role="region"
+      aria-label="终端屏幕"
+      tabIndex={0}
+      onClick={(event) => {
+        if (!active || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || window.getSelection()?.toString()) return;
+        const target = event.target;
+        if (target instanceof Element && target.closest("a,button,input,textarea,select,summary,[contenteditable=true],[data-terminal-program]")) return;
+        event.currentTarget.focus({ preventScroll: true });
+      }}
       data-page={page + 1}
       data-pages={metrics.pages}
     >

@@ -66,13 +66,13 @@ describe("safe terminal", () => {
     );
     expect(normalizePath("~/posts")).toBe("/posts");
   });
-  it("mouse, terminal, and palette resolve the same content action", async () => {
+  it("open loads a Vim source buffer while links retain the public route", async () => {
     const c = context();
     const file = resolveTarget("posts/你好.md", "/", nodes)!;
     const mouse = navigationFor(file);
     const palette = navigationFor(nodes.find((n) => n.id === "1")!);
-    await execute("open posts/你好.md", c);
-    expect(c.navigate).toHaveBeenCalledWith(mouse);
+    expect(await execute("open posts/你好.md", c)).toEqual([{ type: "file", node: file, text: "test" }]);
+    expect(c.navigate).not.toHaveBeenCalled();
     expect(mouse).toEqual(palette);
     expect(mouse).toEqual({
       route: "/posts/你好",
@@ -80,6 +80,22 @@ describe("safe terminal", () => {
       cwd: "/posts",
     });
     expect(cwdForRoute(mouse.route, nodes)).toBe("/posts");
+  });
+  it("vim aliases open and cancelled file loads cannot enter the editor", async () => {
+    const c = context();
+    expect((await execute("vim posts/你好.md", c))[0]?.type).toBe("file");
+    const controller = new AbortController();
+    c.readFile = async () => { controller.abort(); return "stale"; };
+    expect(await execute("open posts/你好.md", c, controller.signal)).toEqual([]);
+    expect((await execute("open about.md extra", context()))[0]?.type).toBe("error");
+  });
+  it("opens personal files and comments through direct terminal commands", async () => {
+    const c = context(); c.interact = vi.fn();
+    expect(await execute("files", c)).toEqual([]);
+    expect(await execute("mycomments", c)).toEqual([]);
+    expect(c.interact).toHaveBeenNthCalledWith(1, "files");
+    expect(c.interact).toHaveBeenNthCalledWith(2, "mycomments");
+    expect((await execute("files secret", c))[0]?.type).toBe("error");
   });
   it("completes commands and paths", () => {
     expect(complete("he", "/", nodes)).toContain("help ");

@@ -29,3 +29,7 @@
   text-overflow: ellipsis;
   line-height: 22px;
 }
+.terminal-route-screen, .terminal-vim-screen { display: flex; flex: 1; min-height: 0; }
+.terminal [hidden] { display: none !important; }
+.screen-pager:focus { outline: none; }
+.screen-pager:focus-visible .screen-paging { color: var(--accent); }

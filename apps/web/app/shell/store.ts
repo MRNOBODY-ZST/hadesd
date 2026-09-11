@@ -63,5 +63,8 @@ export const usePreferences = create<Preferences>((set, get) => ({
       /* use readable defaults */
     }
   },
-  toggle: (key, value) => set({ [key]: value ?? !get()[key] }),
+  toggle: (key, value) => {
+    const enabled = value ?? !get()[key];
+    set({ ...(enabled ? { settingsOpen: false, paletteOpen: false, explorerOpen: false } : {}), [key]: enabled });
+  },
 }));

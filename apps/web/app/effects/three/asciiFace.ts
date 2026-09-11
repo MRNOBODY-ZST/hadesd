@@ -8,6 +8,7 @@ import {
   type Node,
 } from "three/webgpu";
 import {
+  abs,
   clamp,
   cos,
   float,
@@ -25,6 +26,7 @@ import {
   vec2,
   vec3,
 } from "three/tsl";
+import { mirrorMacFacePixels } from "./macFaceSymmetry";
 
 const FACE_WIDTH = 768;
 const FACE_HEIGHT = 768;
@@ -53,8 +55,8 @@ function dataTexture(canvas: HTMLCanvasElement, name: string) {
   return result;
 }
 
-/** Original dark happy-computer silhouette on a bright field. Only the right eye changes. */
-function drawFace(wink: boolean) {
+/** The complete computer and both eye states share the same x=384 mirror axis. */
+function drawFace(eyesClosed: boolean) {
   const { canvas, context: c } = surface(FACE_WIDTH, FACE_HEIGHT);
   c.fillStyle = "#f6f6f6";
   c.fillRect(0, 0, FACE_WIDTH, FACE_HEIGHT);
@@ -76,17 +78,16 @@ function drawFace(wink: boolean) {
   c.stroke();
 
   c.fillStyle = "#080808";
-  c.fillRect(270, 224, 29, 50);
-  if (wink) {
+  if (eyesClosed) {
     c.lineWidth = 13;
     c.lineCap = "square";
     c.beginPath();
-    c.moveTo(455, 253);
-    c.lineTo(470, 243);
-    c.lineTo(490, 253);
+    c.moveTo(270, 253);
+    c.lineTo(284.5, 243);
+    c.lineTo(299, 253);
     c.stroke();
   } else {
-    c.fillRect(460, 224, 29, 50);
+    c.fillRect(270, 224, 29, 50);
   }
 
   c.lineWidth = 16;
@@ -94,17 +95,21 @@ function drawFace(wink: boolean) {
   c.beginPath();
   c.moveTo(266, 340);
   c.lineTo(297, 366);
-  c.lineTo(449, 366);
-  c.lineTo(481, 340);
+  c.lineTo(384, 366);
   c.stroke();
 
   // A disk slot and vents retain the unmistakable small-computer silhouette.
   c.fillStyle = "#151515";
-  c.fillRect(406, 553, 150, 17);
-  c.fillRect(520, 582, 35, 11);
+  c.fillRect(304, 553, 160, 17);
+  c.fillRect(374, 582, 20, 11);
   for (let i = 0; i < 5; i++) c.fillRect(191 + i * 21, 546, 10, 48);
-  c.fillRect(255, 703, 257, 14);
-  return dataTexture(canvas, wink ? "hadesd-face-wink" : "hadesd-face-open");
+  c.fillRect(256, 703, 256, 14);
+  // Copy actual pixels, rather than trusting independently antialiased paths.
+  // This also guarantees symmetry when both eyes close during the blink.
+  const artwork = c.getImageData(0, 0, FACE_WIDTH, FACE_HEIGHT);
+  mirrorMacFacePixels(artwork.data, FACE_WIDTH, FACE_HEIGHT);
+  c.putImageData(artwork, 0, 0);
+  return dataTexture(canvas, eyesClosed ? "hadesd-face-eyes-closed" : "hadesd-face-open");
 }
 
 /** Sort our own glyphs by measured ink coverage, so intensity means density. */
@@ -147,7 +152,7 @@ export interface AsciiFaceOptions {
 /**
  * Reusable RGB nodes for a real luminance-driven face and its ASCII rendering.
  * Update uniforms.progress from scroll and uniforms.time from elapsed seconds.
- * No timers, texture uploads or random animation run inside this helper.
+ * The immutable atlas also supplies animated side tiles entirely on the GPU.
  */
 export function createAsciiFace(options: AsciiFaceOptions = {}) {
   const open = drawFace(false);
@@ -161,11 +166,11 @@ export function createAsciiFace(options: AsciiFaceOptions = {}) {
     grid: uniform(new Vector2(columns, options.rows ?? Math.round(columns / aspect * GLYPH_WIDTH / GLYPH_HEIGHT))),
     aspect: uniform(aspect),
     tint: uniform(new Color(options.tint ?? "#d5e3d8")),
-    /** Set to 0 to suppress blinking for reduced motion or deterministic stills. */
+    /** Set to 0 to freeze both symmetric blinking and the background animation. */
     blinkEnabled: uniform(1),
   };
 
-  // A 0.4-second unilateral wink every 4.8 s. Time never changes spatial flow.
+  // Both eyes close together for 0.4 seconds every 4.8 seconds.
   const blinkPhase = fract(uniforms.time.add(2.1).div(4.8)).mul(4.8);
   const blinkNode = smoothstep(0, 0.07, blinkPhase)
     .mul(float(1).sub(smoothstep(0.28, 0.4, blinkPhase)))
@@ -189,32 +194,50 @@ export function createAsciiFace(options: AsciiFaceOptions = {}) {
   };
 
   const sampleImage = (coordinates: Node<"vec2">) => faceSample(coordinates).mul(uniforms.tint);
-  const sampleColor = (coordinates: Node<"vec2">) => Fn(() => {
-    const cellPosition = coordinates.mul(uniforms.grid);
-    const cell = cellPosition.floor();
-    const center = cell.add(0.5).div(uniforms.grid);
-    const local = fract(cellPosition);
-    const source = faceSample(center);
-    const luminance = source.dot(vec3(0.2126, 0.7152, 0.0722));
-    const level = clamp(luminance.sub(0.025).div(0.975), 0, 1);
-    // Static, cell-local variation keeps bright fields rich in real glyphs.
-    // Neither scroll nor time affects this hash, so a paused tile never shuffles.
-    const hash = fract(sin(cell.dot(vec2(127.1, 311.7))).mul(43758.5453));
-    const brightField = smoothstep(0.48, 0.94, level);
-    const density = clamp(level.pow(0.78).mul(0.89)
-      .add(hash.sub(0.5).mul(0.20).mul(brightField)), 0, 0.98);
-    const index = density.mul(atlas.ranked.length - 1).floor();
+  const sampleGlyph = (index: Node<"float">, local: Node<"vec2">) => {
     const column = index.mod(ATLAS_COLUMNS);
     const row = index.div(ATLAS_COLUMNS).floor();
-    // Keep samples half a texel inside their cell; no mipmaps bleed adjacent glyphs.
+    // Half-texel insets prevent adjacent atlas characters from bleeding together.
     const glyphUv = vec2(
       column.mul(GLYPH_WIDTH).add(local.x.mul(GLYPH_WIDTH - 1)).add(0.5).div(ATLAS_COLUMNS * GLYPH_WIDTH),
       float(1).sub(row.mul(GLYPH_HEIGHT).add(float(1).sub(local.y).mul(GLYPH_HEIGHT - 1)).add(0.5).div(atlas.rows * GLYPH_HEIGHT)),
     );
-    const ink = texture(atlas.texture, glyphUv).a;
-    // A restrained phosphor floor makes the complete tile opaque and coherent;
-    // dark outlines retain much lower luminance than the dense background ink.
-    return uniforms.tint.mul(ink.mul(1.32).add(0.025)).mul(level.pow(0.58));
+    return texture(atlas.texture, glyphUv).a;
+  };
+  // Skyworks samples animated luminance once per fixed cell, then selects from
+  // its atlas. We retain that cell/atlas model with a procedural moving field
+  // and seeded character changes, so there is no video or frame texture upload.
+  // https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/asci-background.tsx
+  const sampleBackground = (coordinates: Node<"vec2">, seed: Node<"float">) => {
+    const cellPosition = coordinates.mul(uniforms.grid);
+    const cell = cellPosition.floor();
+    const stable = fract(sin(cell.dot(vec2(127.1, 311.7)).add(seed.mul(17.13))).mul(43758.5453));
+    const time = uniforms.time.mul(uniforms.blinkEnabled);
+    const tick = time.mul(stable.mul(4).add(3)).add(stable.mul(7)).floor();
+    const random = fract(sin(cell.dot(vec2(269.5, 183.3)).add(tick.mul(31.7)).add(seed.mul(53.1))).mul(43758.5453));
+    const field = sin(cell.x.mul(.11).add(time.mul(.7)))
+      .add(cos(cell.y.mul(.14).sub(time.mul(.48)))).mul(.09).add(.82);
+    const index = random.mul(atlas.ranked.length * .56).add(atlas.ranked.length * .35).floor();
+    const ink = sampleGlyph(index, fract(cellPosition));
+    return vec3(.94, .97, 1).mul(ink.mul(random.mul(.35).add(.95)).mul(field).add(.009));
+  };
+  const sampleColor = (coordinates: Node<"vec2">, seed: Node<"float"> = float(0)) => Fn(() => {
+    // Fold before quantizing: both halves use the same cell and mirrored glyph
+    // pixels, including when the viewport produces an odd number of columns.
+    const mirrored = vec2(abs(coordinates.x.sub(.5)).add(.5), coordinates.y);
+    const iconCellPosition = mirrored.mul(uniforms.grid);
+    const center = iconCellPosition.floor().add(0.5).div(uniforms.grid);
+    const source = faceSample(center);
+    const luminance = source.dot(vec3(0.2126, 0.7152, 0.0722));
+    const level = clamp(luminance.sub(0.025).div(0.975), 0, 1);
+    const density = clamp(level.pow(0.78).mul(0.89), 0, 0.98);
+    const index = density.mul(atlas.ranked.length - 1).floor();
+    const ink = sampleGlyph(index, fract(iconCellPosition));
+    const icon = uniforms.tint.mul(ink.mul(1.32).add(0.025)).mul(level.pow(0.58));
+    // The source's bright exterior is the only animated region. Source body,
+    // screen, eyes, smile and stand remain a stable symmetric silhouette.
+    const iconMask = float(1).sub(step(FACE_BACKGROUND - .002, luminance));
+    return mix(sampleBackground(coordinates, seed), icon, iconMask);
   })();
   const imageNode = Fn(() => sampleImage(uv()))();
   const colorNode = sampleColor(uv());
@@ -223,7 +246,7 @@ export function createAsciiFace(options: AsciiFaceOptions = {}) {
   return {
     colorNode,
     imageNode,
-    /** The same glyph mapping with caller-owned tile UVs; no extra textures. */
+    /** Shared symmetric Mac plus animated exterior; an optional seed varies only the background. */
     sampleColor,
     sampleImage,
     blinkNode,

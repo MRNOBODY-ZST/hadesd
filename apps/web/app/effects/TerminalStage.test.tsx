@@ -6,6 +6,8 @@ import { renderToString } from "react-dom/server";
 import { TerminalStage } from "./TerminalStage";
 import {
   BOOT_DURATION_MS,
+  BOOT_CRT_WARMUP_MS,
+  BOOT_GUI_START,
   PULLBACK_DURATION_MS,
   RESUME_DURATION_MS,
   PENETRATE_DURATION_MS,
@@ -143,10 +145,13 @@ async function toHero() {
   await advanceTime(BOOT_DURATION_MS + 50);
   await advanceTime(PULLBACK_DURATION_MS + 50);
 }
+function travelForward() {
+  for (let step = 0; step < 9; step++) fireEvent.keyDown(window, { key: "PageDown" });
+}
 async function toReveal(stage: Element) {
   await toHero();
-  fireEvent.keyDown(window, { key: "End" });
-  await advanceTime(1100);
+  travelForward();
+  await untilPhase(stage, "resume");
   expect(stage.getAttribute("data-intro-phase")).toBe("resume");
   await advanceTime(RESUME_DURATION_MS + 50);
   expect(stage.getAttribute("data-intro-phase")).toBe("penetrate");
@@ -186,7 +191,7 @@ it("pauses DOS at 80%, pulls back before enabling the hero, and waits for user t
   expect(stage.getAttribute("data-intro-phase")).toBe("hero");
   fireEvent.keyDown(window, { key: "PageDown" });
   await advanceTime(1800);
-  expect(stage.getAttribute("data-intro-progress")).toBe("24");
+  expect(stage.getAttribute("data-intro-progress")).toBe("12");
 });
 
 it("resumes the remaining boot only after travel, penetrates, then reveals seven real DOM groups before ready", async () => {
@@ -198,7 +203,7 @@ it("resumes the remaining boot only after travel, penetrates, then reveals seven
   const observer = new MutationObserver(() => mutations.push(surface.getAttribute("data-terminal-reveal-step")!));
   observer.observe(surface, { attributes: true, attributeFilter: ["data-terminal-reveal-step"] });
   await toHero();
-  fireEvent.click(screen.getByRole("button", { name: "进入终端" }));
+  travelForward();
   await untilPhase(stage, "resume");
   expect(stage.getAttribute("data-intro-phase")).toBe("resume");
   expect(stage.getAttribute("data-intro-progress")).toBe("100");
@@ -215,7 +220,7 @@ it("resumes the remaining boot only after travel, penetrates, then reveals seven
     expect(getComputedStyle(screen.getByTestId(`reveal-${step}`)).visibility, `group ${step} hidden at reveal 0`).toBe("hidden");
   }
   for (let step = 1; step <= 7; step++) {
-    await advanceTime(step === 1 ? 240 : 225);
+    await advanceTime(step === 1 ? 110 : 95);
     expect(stage.getAttribute("data-reveal-step")).toBe(String(step));
     expect(screen.getByTestId("gpu-scene").getAttribute("data-reveal")).toBe(String(step));
     for (let group = 1; group <= 7; group++) {
@@ -242,7 +247,7 @@ it("resumes the remaining boot only after travel, penetrates, then reveals seven
 it("hands the renderer a new phase with its reset progress before React commits the next timed stage", async () => {
   const stage = await start();
   await toHero();
-  fireEvent.keyDown(window, { key: "End" });
+  travelForward();
   await untilPhase(stage, "resume");
   const crossBoundary = async (from: string, to: string) => {
     while (graphicsMock.readFrame!().phaseProgress < 0.8) await advanceTime(16);
@@ -275,9 +280,17 @@ it("hands the renderer a new phase with its reset progress before React commits 
   expect(stage.querySelector(".stage-content")?.hasAttribute("inert")).toBe(true);
 });
 
-it("skips every remaining stage and reboot resets both clocks, travel and all reveal groups", async () => {
+it("blocks direct jump shortcuts and hidden commands while normal travel and reboot stay accessible", async () => {
   const stage = await start();
-  fireEvent.keyDown(window, { key: "Enter" });
+  const commands = vi.fn();
+  window.addEventListener("keydown", commands);
+  for (const key of ["Enter", "Escape", "x"]) fireEvent.keyDown(window, { key });
+  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+  expect(stage.getAttribute("data-intro-phase")).toBe("boot");
+  expect(commands).not.toHaveBeenCalled();
+  window.removeEventListener("keydown", commands);
+  await toReveal(stage);
+  await advanceTime(2200);
   expect(stage.getAttribute("data-intro-phase")).toBe("terminal");
   expect(stage.getAttribute("data-reveal-step")).toBe("7");
   fireEvent(window, new Event("hadesd:reboot"));
@@ -288,8 +301,8 @@ it("skips every remaining stage and reboot resets both clocks, travel and all re
   expect(stage.getAttribute("data-reveal-step")).toBe("0");
   await toReveal(stage);
   await advanceTime(500);
-  expect(stage.getAttribute("data-reveal-step")).toBe("2");
-  fireEvent.click(screen.getByRole("button", { name: "跳过片头，进入终端" }));
+  expect(stage.getAttribute("data-reveal-step")).toBe("5");
+  expect(screen.queryByRole("button", { name: "跳过片头，进入终端" })).toBeNull();
   await advanceTime(4000);
   expect(stage.getAttribute("data-intro-phase")).toBe("terminal");
   expect(stage.getAttribute("data-reveal-step")).toBe("7");
@@ -317,8 +330,8 @@ it("uses touch travel and restores all terminal groups when the GPU fails during
   await advanceTime(1800);
   expect(stage.getAttribute("data-intro-phase")).toBe("journey");
   expect(Number(stage.getAttribute("data-intro-progress"))).toBeGreaterThan(0);
-  fireEvent.keyDown(window, { key: "End" });
-  await advanceTime(1100);
+  travelForward();
+  await untilPhase(stage, "resume");
   await advanceTime(RESUME_DURATION_MS + 50);
   await advanceTime(PENETRATE_DURATION_MS + 50);
   expect(stage.getAttribute("data-intro-phase")).toBe("reveal");
@@ -347,6 +360,95 @@ it("server HTML keeps the entire article available without client reveal gates",
   expect(html).toContain('href="/posts"');
   expect(html).not.toContain("data-terminal-reveal-step=");
   expect(html).not.toContain('inert=""');
+});
+
+it("keeps the readable slogan and decorative scroll cue together without creating a jump control", async () => {
+  const stage = await start();
+  await toHero();
+  const introduction = screen.getByRole("region", { name: "个人计算机介绍" });
+  const title = screen.getByRole("heading", { name: "让想象，接通现实。" });
+  const cue = screen.getByText("滚动进入这台电脑", { exact: true });
+  expect(introduction.contains(cue)).toBe(true);
+  expect(title.nextElementSibling?.contains(cue)).toBe(true);
+  expect(getComputedStyle(title).fontFamily).toContain("SimSun");
+  expect(getComputedStyle(title).fontWeight).toBe("400");
+  const arrow = introduction.querySelector(".stage-scroll-arrow");
+  expect(arrow?.getAttribute("aria-hidden")).toBe("true");
+  expect(cue.closest("a,button,[tabindex]")).toBeNull();
+  fireEvent.click(cue);
+  await advanceTime(1000);
+  expect(stage.getAttribute("data-intro-phase")).toBe("hero");
+  expect(stage.getAttribute("data-intro-progress")).toBe("0");
+  expect(screen.queryByText(/PERSONAL COMPUTING|EST\. 2026|SYSTEM ONLINE|HARDWARE × SOFTWARE|SKIP INTRO/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "进入终端" })).toBeNull();
+  expect(stage.querySelector(".stage-base")).toBeNull();
+  const glyph = stage.querySelector<HTMLElement>(".stage-hero-glyph")!;
+  fireEvent(window, new MouseEvent("pointermove", { clientX: 10, clientY: 10 }));
+  await advanceTime(20);
+  expect(Number.parseFloat(glyph.style.getPropertyValue("--glyph-x"))).toBeGreaterThan(0);
+  expect(screen.getByRole("heading", { name: "让想象，接通现实。" })).toBeTruthy();
+  fireEvent.keyDown(window, { key: "ArrowDown" });
+  await advanceTime(1800);
+  expect(stage.getAttribute("data-intro-progress")).toBe("4");
+});
+
+it("keeps a borderless rounded black CRT visible before the graphics adapter initializes", async () => {
+  graphicsMock.deferInitialization = true;
+  const stage = await start();
+  const fallback = stage.querySelector<HTMLElement>(".stage-crt-startup")!;
+  expect(fallback).not.toBeNull();
+  expect(getComputedStyle(fallback).display).not.toBe("none");
+  expect(getComputedStyle(fallback).borderTopWidth).toBe("0px");
+  expect(getComputedStyle(fallback).boxShadow).toBe("none");
+  expect(getComputedStyle(fallback).borderRadius).toBe("2% / 3%");
+  expect(stage.querySelector(".stage-physical-frame")).toBeNull();
+  expect(fallback.getAttribute("aria-hidden")).toBe("true");
+  act(() => graphicsMock.initialize!("WebGL2"));
+  expect(getComputedStyle(fallback).opacity).toBe("0");
+});
+
+it("blends the completed CRT aperture into a black surround without an inset light ring", async () => {
+  const stage = await start();
+  fireEvent.click(screen.getByTestId("gpu-failure"));
+  expect(stage.getAttribute("data-intro-phase")).toBe("terminal");
+  expect(getComputedStyle(stage.querySelector(".stage-ambient")!).backgroundColor).toBe("rgb(0, 0, 0)");
+  const glass = document.createElement("div");
+  glass.className = "system-crt-glass";
+  stage.append(glass);
+  expect(getComputedStyle(glass).boxShadow).toBe("inset 0 0 9vw 1vw #0007");
+});
+
+it("waits for the first GPU frame and a CRT-only warmup before any boot text or loading progress", async () => {
+  graphicsMock.deferInitialization = true;
+  const stage = await start();
+  const fallback = stage.querySelector<HTMLElement>(".stage-crt-startup")!;
+  expect(fallback.textContent).toBe("");
+  expect(fallback.querySelector("i")).toBeNull();
+  expect(stage.getAttribute("data-boot-segment")).toBe("warmup");
+  expect(getComputedStyle(stage.querySelector(".stage-boot-status")!).clipPath).toBe("inset(50%)");
+  await advanceTime(1000);
+  expect(stage.getAttribute("data-phase-progress")).toBe("0");
+  act(() => graphicsMock.initialize!("WebGL2"));
+  await advanceTime(BOOT_CRT_WARMUP_MS - 16);
+  expect(stage.getAttribute("data-boot-segment")).toBe("warmup");
+  expect(stage.getAttribute("data-boot-progress")).toBe("0");
+  await advanceTime(48);
+  expect(stage.getAttribute("data-boot-segment")).toBe("post");
+  await advanceTime(BOOT_GUI_START * BOOT_DURATION_MS - BOOT_CRT_WARMUP_MS + 50);
+  expect(stage.getAttribute("data-boot-segment")).toBe("gui");
+  expect(Number(stage.getAttribute("data-boot-progress"))).toBeGreaterThan(0);
+});
+
+it("shares the near-fullscreen geometry with the native hit layer and removes terminal chrome overlap", async () => {
+  const mounted = render(<TerminalStage theme="paper" level="off"><Content /></TerminalStage>);
+  await advanceTime(1);
+  const stage = mounted.container.querySelector(".terminal-stage")!;
+  const frame = getComputedStyle(stage);
+  expect(frame.getPropertyValue("--screen-x").trim()).toBe("1vw");
+  expect(frame.getPropertyValue("--screen-top").trim()).toBe("2dvh");
+  expect(frame.getPropertyValue("--screen-bottom").trim()).toBe("2dvh");
+  expect(getComputedStyle(stage.querySelector(".stage-masthead")!).visibility).toBe("hidden");
+  expect(stage.querySelector(".stage-content")?.contains(screen.getByRole("textbox", { name: "博客命令" }))).toBe(true);
 });
 
 it("reinitializes graphics on Off to Full, delaying the composited glass until the new adapter succeeds", async () => {

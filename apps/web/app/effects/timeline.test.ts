@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
 import {
   BOOT_DURATION_MS,
+  BOOT_CRT_WARMUP_MS,
+  BOOT_POST_DURATION_MS,
+  BOOT_GUI_TRANSITION_MS,
+  BOOT_GUI_DURATION_MS,
+  BOOT_POST_START,
+  BOOT_TRANSITION_START,
+  BOOT_GUI_START,
+  bootSegmentsAt,
   bootProgressAt,
   clampProgress,
   easeJourney,
@@ -17,7 +25,7 @@ import {
 
 it("pauses the first boot at 80% and user travel leads to resume rather than a ready terminal", () => {
   expect(bootProgressAt(0)).toBe(0);
-  expect(bootProgressAt(BOOT_DURATION_MS / 2)).toBe(0.4);
+  expect(bootProgressAt(BOOT_GUI_START * BOOT_DURATION_MS + BOOT_GUI_DURATION_MS / 2)).toBeCloseTo(0.4);
   expect(bootProgressAt(BOOT_DURATION_MS + 10000)).toBe(0.8);
   expect(phaseForJourney(0)).toBe("hero");
   expect(easeJourney(0, 0, 60000)).toBe(0);
@@ -30,11 +38,32 @@ it("normalizes wheels, touch swipes and keyboard travel in both directions", () 
   expect(wheelStep(-160, 0, 800)).toBe(-wheelStep(160, 0, 800));
   expect(touchStep(200, 800)).toBeGreaterThan(0);
   expect(touchStep(-200, 800)).toBe(-touchStep(200, 800));
-  expect(keyStep("ArrowDown")).toBe(0.12);
-  expect(keyStep("PageDown")).toBe(0.24);
-  expect(keyStep(" ", true)).toBe(-0.24);
-  expect(keyStep("PageUp")).toBe(-0.24);
+  expect(keyStep("ArrowDown")).toBe(0.04);
+  expect(keyStep("PageDown")).toBe(0.12);
+  expect(keyStep(" ", true)).toBe(-0.12);
+  expect(keyStep("PageUp")).toBe(-0.12);
   expect(keyStep("x")).toBeNull();
+});
+it("holds a black CRT, scrolls POST, then flashes to GUI before its progress bar begins", () => {
+  expect(BOOT_DURATION_MS).toBe(5000);
+  expect(BOOT_CRT_WARMUP_MS + BOOT_POST_DURATION_MS + BOOT_GUI_TRANSITION_MS + BOOT_GUI_DURATION_MS).toBe(BOOT_DURATION_MS);
+  expect(bootSegmentsAt(0).segment).toBe("warmup");
+  expect(bootSegmentsAt((BOOT_CRT_WARMUP_MS - 1) / BOOT_DURATION_MS)).toMatchObject({ segment: "warmup", post: 0, transition: 0, gui: 0 });
+  expect(bootSegmentsAt(BOOT_POST_START)).toMatchObject({ segment: "post", warmup: 1, post: 0, gui: 0 });
+  expect(bootSegmentsAt(BOOT_TRANSITION_START)).toMatchObject({ segment: "transition", post: 1, transition: 0, gui: 0 });
+  expect(bootSegmentsAt(BOOT_GUI_START)).toMatchObject({ segment: "gui", transition: 1, gui: 0 });
+  expect(bootSegmentsAt(1)).toMatchObject({ segment: "gui", gui: 1 });
+  expect(bootProgressAt(BOOT_GUI_START * BOOT_DURATION_MS)).toBe(0);
+  expect(bootProgressAt(BOOT_CRT_WARMUP_MS + BOOT_POST_DURATION_MS / 2)).toBe(0);
+});
+it("keeps a wheel notch subtle and bounds even a very large wheel or keyboard event", () => {
+  expect(wheelStep(120, 0, 900)).toBeGreaterThan(0.01);
+  expect(wheelStep(120, 0, 900)).toBeLessThan(0.025);
+  expect(wheelStep(10000, 0, 900)).toBeLessThanOrEqual(0.06);
+  expect(wheelStep(-10000, 0, 900)).toBeGreaterThanOrEqual(-0.06);
+  expect(keyStep("End")).toBe(0.12);
+  expect(keyStep("Home")).toBe(-0.12);
+  expect(touchStep(900, 900)).toBeLessThanOrEqual(0.12);
 });
 it("smooths toward a fixed user destination and can reverse fully to hero", () => {
   let progress = 0;
@@ -58,8 +87,8 @@ it("uses separate bounded phase clocks, with no timer for the stationary hero or
   expect(nextTimedPhase("reveal")).toBe("terminal");
   expect(isTimedPhase("hero")).toBe(false);
   expect(isTimedPhase("journey")).toBe(false);
-  expect(timedPhaseDuration("boot", [])).toBe(2600);
-  expect(timedPhaseDuration("pullback", [])).toBe(2200);
+  expect(timedPhaseDuration("boot", [])).toBe(5000);
+  expect(timedPhaseDuration("pullback", [])).toBe(1800);
   expect(timedPhaseDuration("resume", [])).toBe(1300);
   expect(timedPhaseDuration("penetrate", [])).toBe(1100);
 });
@@ -73,10 +102,10 @@ it("reveals seven groups with bounded irregular intervals and a final readable s
   schedule.forEach((time, i) => {
     expect(revealStepAt(time - 1, schedule)).toBe(i);
     expect(revealStepAt(time, schedule)).toBe(i + 1);
-    expect(time - (schedule[i - 1] ?? 0)).toBeGreaterThanOrEqual(190);
-    expect(time - (schedule[i - 1] ?? 0)).toBeLessThanOrEqual(260);
+    expect(time - (schedule[i - 1] ?? 0)).toBeGreaterThanOrEqual(70);
+    expect(time - (schedule[i - 1] ?? 0)).toBeLessThanOrEqual(120);
   });
   expect(timedPhaseDuration("reveal", schedule)).toBe(schedule[6]! + 100);
-  expect(timedPhaseDuration("reveal", createRevealSchedule(() => 0))).toBeGreaterThanOrEqual(1400);
-  expect(timedPhaseDuration("reveal", createRevealSchedule(() => 1))).toBeLessThanOrEqual(2000);
+  expect(timedPhaseDuration("reveal", createRevealSchedule(() => 0))).toBeGreaterThanOrEqual(590);
+  expect(timedPhaseDuration("reveal", createRevealSchedule(() => 1))).toBeLessThanOrEqual(940);
 });

@@ -1,0 +1,7 @@
+# Optional host access for migration tools or a JVM running outside Compose.
+# No console port or public port is published.
+services:
+  minio:
+    # Docker does not publish host ports from an internal-only network.
+    networks: [private, edge]
+    ports: ["127.0.0.1:${MINIO_PORT:-19000}:9000"]

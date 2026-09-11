@@ -16,6 +16,7 @@ export type Output =
   | { type: "directory-list"; nodes: VfsNode[]; long: boolean }
   | { type: "help"; commands: Command[] }
   | { type: "navigation"; target: Navigation; text: string }
+  | { type: "file"; node: VfsNode; text: string }
   | { type: "clear" };
 export interface Command {
   name: string;
@@ -30,8 +31,9 @@ export const commands: Command[] = [
   ["pwd", "", "显示当前路径", "pwd"],
   ["tree", "[path]", "查看公开目录树", "tree ~"],
   ["cat", "<file>", "预览短文本，长文提供阅读入口", "cat about.md"],
-  ["open", "<file>", "打开完整阅读器", "open posts/example.md"],
-  ["less", "<file>", "open 的阅读器别名", "less about.md"],
+  ["open", "<file>", "在 Vim 中打开文件；i 编辑，:q 退出", "open posts/example.md"],
+  ["vim", "<file>", "打开 Vim；:w 保存草稿，:wq 保存退出", "vim about.md"],
+  ["less", "<file>", "open 的 Vim 阅读别名", "less about.md"],
   ["search", "<query>", "搜索当前上线内容", 'search "C++ && Rust"'],
   ["tag", "<name>", "按标签浏览", "tag 网络"],
   ["about", "", "关于本站", "about"],
@@ -45,9 +47,11 @@ export const commands: Command[] = [
   ["reader", "on|off", "切换专注阅读模式", "reader on"],
   ["reboot", "", "重新播放终端启动", "reboot"],
   ["display", "", "打开显示设置", "display"],
-  ["login", "", "打开登录窗口", "login"],
-  ["register", "", "打开注册窗口", "register"],
+  ["login", "", "进入终端登录程序", "login"],
+  ["register", "", "进入终端注册程序", "register"],
   ["profile", "", "打开账号与我的文件", "profile"],
+  ["files", "", "进入我的附件管理", "files"],
+  ["mycomments", "", "查看和管理我的评论", "mycomments"],
   ["logout", "", "请求退出当前账号", "logout"],
   ["comments", "", "查看当前文章评论", "comments"],
   [
@@ -269,7 +273,7 @@ export function completeAt(input: string, caret: number, cwd: string, nodes: Vfs
       tag: [...new Set(nodes.flatMap(n => n.tags))],
     };
     if (parameters[command] && !args.length) values = parameters[command]!.map(text => ({ text }));
-    const acceptsPath = ["cd", "ls", "tree", "open", "less", "cat"].includes(command)
+    const acceptsPath = ["cd", "ls", "tree", "open", "vim", "less", "cat"].includes(command)
       && !(command === "ls" ? args.filter(a => a !== "-l") : args).length;
     if (acceptsPath) {
       if (["~", ".", ".."].includes(typed)) values.push({ text: typed + "/", directory: true });
@@ -302,11 +306,11 @@ export function completeAt(input: string, caret: number, cwd: string, nodes: Vfs
 export function complete(input: string, cwd: string, nodes: VfsNode[]): string[] {
   return completeAt(input, input.length, cwd, nodes).map(candidate => candidate.value);
 }
-export type InteractionCommand = "reboot" | "display" | "login" | "register" | "profile" | "logout" | "comments";
+export type InteractionCommand = "reboot" | "display" | "login" | "register" | "profile" | "files" | "mycomments" | "logout" | "comments";
 /** Account commands open forms; their accidentally supplied arguments are never echoed or recalled. */
 export function redactAccountArguments(command: string): string {
   const name = completionTokens(command)[0]?.value;
-  return name && ["login", "register", "profile", "logout"].includes(name)
+  return name && ["login", "register", "profile", "files", "mycomments", "logout"].includes(name)
     ? name
     : command;
 }
@@ -388,7 +392,7 @@ export async function execute(
     return node ? nav(node) : fail("这个公开页面不存在。");
   };
   switch (name) {
-    case "reboot": case "display": case "login": case "register": case "profile": case "logout": case "comments":
+    case "reboot": case "display": case "login": case "register": case "profile": case "files": case "mycomments": case "logout": case "comments":
       if (args.length) return fail(`${name} 不接受参数，请在对应界面操作。`);
       if (!context.interact) return fail("该操作需要在网页终端中打开。");
       context.interact(name);
@@ -457,17 +461,19 @@ export async function execute(
       );
     }
     case "open":
+    case "vim":
     case "less":
     case "cat": {
       if (!args[0]) return fail(`${name} 需要一个公开路径。`);
+      if (args.length !== 1) return fail(`${name} 只接受一个公开路径。`);
       const node = resolveTarget(args[0], context.cwd, context.nodes);
       if (!node)
         return fail("找不到该公开文件。open 仅接受本站公开目录或文件。");
-      if (name !== "cat") return nav(node);
-      if (node.kind === "directory") return fail("这是目录，请使用 ls。");
+      if (node.kind === "directory") return name === "cat" || name === "vim" ? fail("这是目录，请使用 ls。") : nav(node);
       try {
         const content = await context.readFile(node, signal);
         if (signal.aborted) return [];
+        if (name !== "cat") return [{ type: "file", node, text: content }];
         const preview = content
           .split("\n")
           .slice(0, 200)
@@ -534,7 +540,7 @@ export async function execute(
         return fixed("/" + args[0]);
       if (args[0] === "status")
         return out(
-          `公开版本：${context.releaseId}\n当前目录：${context.cwd}\n主题：${context.theme} · CRT：${context.crt} · 阅读模式：${context.reader ? "on" : "off"}\n这是只读博客终端，不连接服务器 Shell。`,
+          `公开版本：${context.releaseId}\n当前目录：${context.cwd}\n主题：${context.theme} · CRT：${context.crt} · 阅读模式：${context.reader ? "on" : "off"}\n博客终端支持 Vim、账号和评论。公开文件只读；管理员可保存服务器草稿，读者可保存浏览器本地副本。`,
         );
       return fail("可用子命令：status、projects、now。");
     default:

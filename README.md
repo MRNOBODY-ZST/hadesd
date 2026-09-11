@@ -1,12 +1,14 @@
 # HADESD
 
-**a personal daemon.** 一台记录研究、工程与思考的个人计算机。DOS 蓝色 CRT 先加载到 80%，镜头拉远显露原创复古 Mac 风格电脑与介绍文字。滚轮或触屏上划推近屏幕，穿过 ASCII 图案、弯曲屏幕与电子元件，再回到 DOS 完成剩余启动；穿过屏幕后，固定终端分七批显现，最后光标开始接受输入。后台是独立的中文 Markdown 写作界面。
+**a personal daemon.** 一台记录研究、工程与思考的个人计算机。v9 恢复经典 Macintosh 128K 风格的立式主机，搭配分体键盘和鼠标；左侧是暖白宋体大标题「让想象，接通现实。」，滚动提示与下箭头紧随其后。手机保持标题在上、电脑在下。五秒开机依次经历黑色 CRT 预热、DOS 滚屏、显示模式切换和图形界面加载至 80%，随后镜头带着残影拉远。电脑屏幕轮播八种终端演示，地面保留柔化的实时反射。滚轮或触屏上划逐步推近屏幕，穿过保留对称 Mac 图标的 ASCII 滚筒与有深度的二进制字符流，再回到启动画面完成剩余进度；镜头继续单向穿入屏幕，七批终端内容依次显现，最后光标开始接受输入。后台是独立的中文 Markdown 写作界面。
 
-显示层使用 **Three.js 0.186.0、React Three Fiber 9.7.0、WebGPU / WebGL2、Three Shading Language**。真实终端文字缓冲与场景 render target 组成核心双 RT 通道，处理曲面、扫描线、色散与辉光。电脑、电子元件和 Mac Face 画面由本站生成；v4.1 的 ASCII 屏幕变形与逐格滚动适配 [Skyworks 的 CylinderPlane](https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx)，明确保留算法来源。当前场景采用个人计算机主题。GPU 后处理覆盖整个三维场景，整页 CSS glass 补充页面与弹窗质感，后台使用较轻效果；glass 在 WebGPU 初始化期间暂缓，显示设备成功就绪后恢复。
+显示层使用 **Three.js 0.186.0、React Three Fiber 9.7.0、WebGPU / WebGL2、Three Shading Language**。真实终端文字缓冲与场景 render target 组成核心双 RT 通道，处理曲面、扫描线、色散与辉光；物理电脑的全部屏幕内容共用 CRT 镜片，平面反射相机直接渲染同一场景与动态屏幕材质，不另加地面屏幕投影。暖灰、淡紫薄雾使用两个世界空间体积和三维噪声逐步采样，分别形成近地与机后雾层，在现有场景中绘制，不新增离屏通道或 Canvas。电脑和对称 Mac Face 画面由本站生成，ASCII 屏幕变形与逐格滚动继续适配 [Skyworks 的 CylinderPlane](https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx)，保留算法来源。每格图标之外的背景字符由 GPU 动态更新，二进制流使用实例化绘制。GPU 后处理覆盖三维场景，整页 CSS glass 补充终端质感，后台使用较轻效果。所有 CRT 保留圆润黑色裁切，移除显式闭合浅色描边；满屏显像时，背景、地面与雾层退场，屏幕直接和黑色相接。GPU 初始化前也使用无浅色边线的原生黑色显像画面。
+
+经典主机只绕竖轴转动，分体键盘和鼠标保留各自造型。镜头在介绍阶段由 44° 温和展开到 52°，距离同步做正切补偿；桌面和手机使用不同的相机高度与偏航，进入滚筒前回到共享交接位置。主机、键盘和鼠标对齐共同支撑平面，三个独立占地范围同时供雾气避让与接触阴影使用；模型资源由组件释放，共享屏幕材质由场景管理。公开站 139 项测试、类型检查及四项开场 E2E 已通过，经典版已发布到隔离 QA，最终静态八阶段录屏与三场景性能复测也已通过。几何参数、当前预览与验证证据见 [docs/crt-journey.md](docs/crt-journey.md)。
 
 此仓库保留用户 `daemon.zip` 中的 **Spring Boot 4.1.1 / Java 25 / Gradle 9.7.1**，按本次要求使用 **WebFlux + R2DBC MySQL + Reactive Redis**，不使用 MVC/JPA。附件原文保存在 [docs/source-requirements.md](docs/source-requirements.md)，实际取舍见 [docs/decisions.md](docs/decisions.md)。
 
-博客已支持读者注册登录、资料管理、Markdown 评论与回复、图片显示、个人文件上传下载，以及作者写作、修订和发布。高级 Markdown 包含代码高亮、公式、脚注、提示块、折叠内容和按需 Mermaid 图表。操作及权限说明见 [docs/blog.md](docs/blog.md)，写作语法见 [docs/markdown-guide.md](docs/markdown-guide.md)。
+博客已支持读者注册登录、资料管理、Markdown 评论与回复、图片显示、个人文件上传下载，以及作者写作、修订和发布。公开站点的账号、搜索、显示设置与评论操作均在终端内完成，`open` 使用 Vim 风格的阅读/编辑缓冲区。文章及用户附件可以统一存入私有 MinIO；配置、校验迁移与备份见 [docs/minio.md](docs/minio.md)。高级 Markdown 包含代码高亮、公式、脚注、提示块、折叠内容和按需 Mermaid 图表。操作及权限说明见 [docs/blog.md](docs/blog.md)，写作语法见 [docs/markdown-guide.md](docs/markdown-guide.md)。
 
 ## 本地启动
 
@@ -59,24 +61,28 @@ pnpm demo
 
 ## 开机、探索与终端操作
 
-DOS 约 2.6 秒加载到 80%，再用约 2.2 秒拉远到电脑介绍画面并等待操作。滚轮和上划控制镜头旅程，页面本身不滚动；停止输入就停在当前旅程目标。旅程到终点后，DOS 自动约 1.3 秒续载至 100%，再约 1.1 秒穿屏，随后终端七组内容在约 1.4–1.9 秒内逐批出现。全部显示完成后才允许命令输入。进入终端后，首页、目录、文章和命令输出都在同一块固定屏幕中，鼠标滚轮不推动正文。长内容逐屏阅读，前后屏保留一行重叠，底部光标与分页操作始终可见。
+初次开机共五秒：350 毫秒黑色 CRT 预热、1.6 秒 DOS 日志滚屏、180 毫秒显示模式切换，再用 2.87 秒让图形界面的状态行、分段进度条和百分比从 0% 加载到 80%。随后约 1.8 秒拉远到电脑介绍画面并等待操作；屏幕从命令提示符开始，轮播其余随机排序的 Mac 图标、ANSI 色彩和五种 Python 演示。滚轮和上划以细粒度步幅控制镜头旅程，页面本身不滚动；停止输入后平滑停在当前目标，也可反向探索。旅程到终点后，同一图形界面约 1.3 秒续载至 100%，镜头再用约 1.1 秒单向穿入屏幕，不再压缩画面或插入故障闪动。随后七组终端内容以每组 70–120 毫秒的间隔显现，约 0.6–0.9 秒后完成显示并允许命令输入。片头没有直接进入或跳过按钮，Enter / Escape 不会跳过剩余阶段。
+
+终端屏幕占视口宽度的 98%、高度的 96%，内容留有内边距与手机安全区。首页、目录、文章和命令输出都在同一块固定屏幕中，鼠标滚轮不推动正文。长内容逐屏阅读，前后屏至少保留一行重叠；表单控件较高时增加重叠，底部光标与分页操作始终可见。GPU 的 `contentRect` 取自真实 DOM 区域，显示文字与链接、选择和输入的坐标保持一致。
 
 | 操作 | 方法 |
 | --- | --- |
-| 探索电脑 | 介绍画面中滚轮向下、触屏上划，或按 ArrowDown / PageDown / 空格；反向滚动、下划、ArrowUp / PageUp / Shift+空格可后退 |
-| 直接推进 | 点击“进入终端”或按 End 推进旅程，随后自动续启、穿屏和显示终端；旅程尚未结束时 Home 可返回介绍 |
-| 跳过片头 | 点击 `SKIP INTRO ↵`（可访问名称“跳过片头，进入终端”）跳过所有剩余阶段并立即显示全部内容；焦点不在交互控件时也可按 Enter / Escape |
-| 打开文件 | 点击文件名，或输入 `ls`、`cd posts`、`open welcome-to-hadesd.md` |
-| 终端翻屏 | 点击 `[ ↑ ]` / `[ ↓ ]`，或按 PageUp / PageDown；未编辑输入时也可用 j / k、方向键、空格、Home / End |
+| 探索电脑 | 介绍画面中滚轮向下、触屏上划，分次小幅推进；反向滚动或下划可后退 |
+| 键盘探索 | ArrowDown / ArrowUp 每次前进或后退 4%；PageDown / 空格 / End 每次前进 12%，PageUp / Shift+空格 / Home 每次后退 12%；Home / End 也按步幅移动 |
+| 打开文件 | 点击文件名查看排版正文；`open` / `vim` / `less welcome-to-hadesd.md` 在终端内打开源码缓冲区 |
+| 终端翻屏 | 命令执行后焦点回到屏幕，↑↓、PageUp / PageDown 直接翻屏；主动进入命令框后 ↑↓ 调用历史，PageUp / PageDown 仍可翻屏 |
+| Vim 编辑 | `i` / `a` 进入 INSERT，Esc 返回 NORMAL；方向键 / h j k l 移动，PgUp / PgDn 翻页，`gg` / `G` 到首尾 |
+| Vim 保存与退出 | `:w` 保存、`:wq` 保存退出、`:q` 退出、`:q!` 放弃修改。管理员编辑服务器最新草稿；普通读者编辑明确标注的浏览器本地副本 |
 | 命令输入 | Enter 执行，Shift+Enter 换行，↑↓ 历史，Tab / Shift+Tab 补全并循环；Ctrl+Space 查看候选；Esc 后 Tab 离开命令框；中文输入法选词不会误执行 |
 | 返回当前文件 | 在命令输出中按 Escape；`clear` 清空输出但保留输入历史 |
-| 搜索 | 输入 `search 关键词`，点击 `[ search ]`，或按 Ctrl/Cmd+K 打开命令面板；片头中使用该快捷键会直接进入终端 |
-| 显示设置 | 输入 `display` 或点击 `[ display ]`；也支持 `theme amber\|green\|paper`、`crt off\|low\|full`、`reader on\|off` |
-| 重新开机 | 输入 `reboot` 或点击 `[ reboot ]`，重置全部进度，重新从 DOS 0% 开始；旅程结束进入续启后，滚轮不能再退回介绍 |
+| 搜索 | 输入 `search 关键词`，点击 `[ search ]`，或按 Ctrl/Cmd+K 打开终端内的搜索程序；`:q` / Esc 返回 |
+| 显示设置 | `display` 在终端内打开设置；也支持 `theme amber\|green\|paper`、`crt off\|low\|full`、`reader on\|off` |
+| 账号与文件 | `login`、`register`、`profile`、`files`、`mycomments`、`logout`；密码仅在密码字段输入，程序支持 `:q` / Esc / Ctrl+C 返回 |
+| 重新开机 | 输入 `reboot` 或点击 `[ reboot ]`，重置全部进度，重新经历黑色 CRT、DOS 与图形界面 0% 启动；旅程结束进入续启后，滚轮不能再退回介绍 |
 
-默认使用完整 CRT。支持 WebGPU 时优先使用，否则自动回退 WebGL2；`?gpu=webgl` 可显式验证 WebGL2。轻微模式在终端中减少渲染频率。关闭 CRT、纸张主题或专注阅读直接使用原生终端；系统“减少动态效果”跳过全部片头。已有显示选择继续保存在当前浏览器的 `hadesd.display.v2` 中。桌面进入终端后可自动聚焦命令输入，手机仅在点击输入框后聚焦。
+默认使用完整 CRT。支持 WebGPU 时优先使用，否则自动回退 WebGL2；`?gpu=webgl` 可显式验证 WebGL2。轻微模式在终端中减少渲染频率。关闭 CRT、纸张主题或专注阅读直接使用原生终端；系统“减少动态效果”跳过全部片头。已有显示选择继续保存在当前浏览器的 `hadesd.display.v2` 中。桌面进入终端后聚焦屏幕；开始输入命令时才进入命令框。表单和 Vim 缓冲区有各自的键盘操作，手机可以使用屏内按钮。
 
-终端保留真实 DOM 的链接、输入、选取和语义。GPU 初始化失败或运行中丢失设备时直接恢复原生终端。禁用 JavaScript 和打印时，预渲染文章恢复自然文档布局，保证全文可访问。终端不连接服务器 Shell。DOS 日志和进度条是片头视觉，不是设备或后端的真实启动诊断。
+终端保留真实 DOM 的链接、输入、选取和语义。GPU 初始化失败或运行中丢失设备时直接恢复原生终端。禁用 JavaScript 和打印时，预渲染文章恢复自然文档布局，保证全文可访问。终端不连接服务器 Shell。DOS 日志、进度条和屏幕轮播都是片头演示，不是设备或后端的真实启动诊断；其中 Python 示例可复制到具备 Python 的终端独立运行，网站本身不执行这些代码。
 
 ## 写作与发布
 
@@ -129,9 +135,9 @@ docker compose --env-file .env -f infra/compose/compose.yaml run --rm backend --
 docker compose --env-file .env -f infra/compose/compose.yaml up -d
 ```
 
-生产入口已部署为 **[https://hadesd.sh](https://hadesd.sh)**，后台为 **[https://hadesd.sh/admin/](https://hadesd.sh/admin/)**。VPS Nginx 终止 TLS，经 WireGuard 转发到内网源站 `10.77.0.2:18088`。源站使用 `/opt/hadesd/app`、`/etc/hadesd/app.env` 和 `/srv/hadesd/{media,published}`，由 `/usr/local/sbin/hadesd-compose` 包装器与 `hadesd.service` 管理；组合基础 Compose 与 `compose.production.yaml`，保持 `SESSION_SECURE=true`。现有环境不要重新运行上面的初始化 bootstrap。
+生产入口已部署为 **[https://hadesd.sh](https://hadesd.sh)**，后台为 **[https://hadesd.sh/admin/](https://hadesd.sh/admin/)**。VPS Nginx 终止 TLS，经 WireGuard 转发到内网源站 `10.77.0.2:18088`。源站使用 `/opt/hadesd/app`、`/etc/hadesd/app.env` 和 `/srv/hadesd/published`，由 `/usr/local/sbin/hadesd-compose` 包装器与 `hadesd.service` 管理；组合基础 Compose、`compose.production.yaml` 和 `compose.minio.yaml`，保持 `SESSION_SECURE=true`。附件使用私有 MinIO，原 `/srv/hadesd/media` 保留为迁移源。现有环境不要重新运行上面的初始化 bootstrap。
 
-2026-09-10 已完成服务器构建发布，以及公开页面、注册登录、文件上传下载、评论权限、CRT 与终端交互验收；证书当时到期日为 **2026-12-08**，VPS 的 `certbot.timer` 已启用且运行，续期 dry-run 通过，并安装了成功续期后校验与 reload Nginx 的钩子。最终停写备份已验证。完整运行路径、证书检查、当前快照发布和恢复流程见 [docs/deployment.md](docs/deployment.md)，测试记录见 [docs/progress.md](docs/progress.md)。公开内容升级仍须经过冻结快照与原子发布。
+2026-09-10 已完成服务器构建发布，以及公开页面、注册登录、文件上传下载、评论权限、CRT 与终端交互验收；证书当时到期日为 **2026-12-08**，VPS 的 `certbot.timer` 已启用且运行，续期 dry-run 通过，并安装了成功续期后校验与 reload Nginx 的钩子。2026-09-11 已将经典 Macintosh 128K 的 v9 部署到正式站，以当前冻结快照重建，保留原有 4 条公开内容和站点设置；29 个附件已校验迁入私有 MinIO，迁移前后备份均通过。v5 至 v8 的历史隔离预览与 v9 当前状态另见 [CRT 旅程说明](docs/crt-journey.md)。完整运行路径、证书检查、当前快照发布和恢复流程见 [docs/deployment.md](docs/deployment.md)，测试记录见 [docs/progress.md](docs/progress.md)。公开内容升级仍须经过冻结快照与原子发布。
 
 内部服务端口不绑定公网。代理/CDN 配置如引入内容缓存，发布与撤稿后必须清除 HTML、`.data`、RSS、sitemap 和媒体缓存，并确认 purge 成功后再报告撤稿完成。本次临时构建代理已移除，随后离线发布成功。
 

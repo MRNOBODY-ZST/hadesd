@@ -8,7 +8,7 @@
   background:
     repeating-linear-gradient(0deg, #0000 0 2px, #00000018 2px 3px),
     repeating-linear-gradient(90deg, #ff310004 0 1px, #40ff8003 1px 2px, #4060ff06 2px 3px);
-  box-shadow: inset 0 0 9vw 1vw #0007, inset 0 0 0 1px #a9c3c81a;
+  box-shadow: inset 0 0 9vw 1vw #0007;
 }
 .system-crt-glass::after {
   content: "";

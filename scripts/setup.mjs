@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile, access, chmod } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { configureMinio } from './setup-minio.mjs';
 const root = resolve(import.meta.dirname, '..');
 await mkdir(resolve(root, '.local'), {recursive: true, mode: 0o700});
 await chmod(resolve(root, '.local'), 0o700);
@@ -16,4 +17,5 @@ WORKER_TOKEN:secret(), RELEASE_ROOT:resolve(root,'.local/published'), MEDIA_ROOT
 SESSION_SECURE:'false', STORAGE_MODE:'local', SITE_ORIGIN:'https://hadesd.sh', WORKER_POLL_MS:'3000'
 };
 await writeFile(resolve(root, '.env'), Object.entries(entries).map(([k,v])=>`${k}=${v}`).join('\n')+'\n', {mode:0o600,flag:'wx'});
+await configureMinio(root);
 console.log('已生成 .env 和 .local/admin-password（权限 600），密码未打印。下一步启动数据库并创建管理员。');

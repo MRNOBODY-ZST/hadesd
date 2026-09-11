@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 class S3StorageTests {
   @Container
   static GenericContainer<?> minio =
-      new GenericContainer<>(DockerImageName.parse("minio/minio:RELEASE.2025-05-24T17-08-30Z"))
+      new GenericContainer<>(DockerImageName.parse(System.getenv().getOrDefault("MINIO_TEST_IMAGE", "hadesd/minio:2025-10-15")))
           .withEnv("MINIO_ROOT_USER", "hadesd-integration")
           .withEnv("MINIO_ROOT_PASSWORD", "integration-only-password")
           .withCommand("server", "/data")

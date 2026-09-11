@@ -1,4 +1,135 @@
-# 五列 ASCII Mac Face → CRT 终端性能实测
+# CRT 旅程性能实测
+
+## v9 最新实测：2026-09-11，经典立式电脑与世界空间体积雾
+
+本节对应恢复经典立式机身、分体键盘与鼠标，并完成纯黑终端背板修正后的最终静态 QA 发布。两块世界空间雾体使用三层 3D 噪声与有限步数 raymarch，保留单次真实反射；机身、键盘和鼠标分别计算接触阴影及雾避让。雾的步数为桌面 Full 16、移动 Full 10、桌面 Low 8、移动 Low 6；本次计时选择前三种场景。
+
+测量访问 `http://127.0.0.1:18088` 的静态构建及真实 API，时间为 **2026-09-11 06:06:04–06:08:03 UTC**。采样前后 `/api/v1/public/release` 都返回 HTTP 200、ACTIVE，发布标识均为 **ea36295c-dd9d-453c-807b-f63f6aa93692**。这不是 Vite 开发站，也没有混用背板修正前的数据；[发布观察记录](../.local/reports/crt-journey-v9/release-observation.json) 单独保存了首尾响应。
+
+使用 Windows、RTX 4090、Edge 152.0.4191.66 的 headless 模式，实际渲染后端为 **WebGPU**，申请到 **Nvidia Lovelace、非 fallback** 适配器。桌面为 1440×900 / DPR 1；移动为 390×844 的模拟视口，图形 DPR 为 1.65。Browser plugin 不可用，使用仓库 Playwright 与已安装 Edge；其他任务的测试浏览器在采样前关闭，应用源码和静态发布保持冻结。
+
+依次运行 desktop-full、mobile-full、desktop-low，取得 **16 个约两秒的样本，33/33 项检查通过**。下表全部来自本次最终静态发布。
+
+| 场景 | 管线提交 FPS | 绘制次数/帧 | 三角形/帧 |
+| --- | ---: | ---: | ---: |
+| 桌面 Full 电脑介绍 | 119.84 | 66 | 28,927 |
+| 移动视口 Full 电脑介绍 | 119.90 | 66 | 28,927 |
+| 桌面 Full 滚筒 50% | 119.92 | 30 | 10,499 |
+| 移动视口 Full 滚筒 50% | 119.88 | 30 | 10,403 |
+| 桌面 Full 终端 | 59.94 | 16 | 1,755 |
+| 移动视口 Full 终端 | 59.96 | 16 | 1,755 |
+| 桌面 Low 电脑介绍 | 29.97 | 66 | 28,927 |
+| 桌面 Low 终端闲置 | 2.00 | 16 | 1,755 |
+| 桌面 Off 终端 | 0.00 | 0 | 0 |
+
+桌面电脑介绍的 CPU 提交耗时平均 **0.820 ms**、P95 **1.00 ms**，滚筒平均 **0.632 ms**、P95 **0.90 ms**，终端平均 **0.527 ms**、P95 **0.70 ms**。桌面介绍和滚筒的 P95 管线帧间隔均为 **8.60 ms**，终端为 **16.80 ms**。绘制与三角形计数来自每次实际管线帧的 `renderer.info`，包含当帧反射和后处理工作；三角形数量也不能表示体积雾每个像素的 raymarch 成本。
+
+跨越真实八秒预设切换的样本记录到 preset **0→2**，保持零终端 Canvas 捕获、零 `GPUQueue.copyExternalImageToTexture` 上传。所有稳定样本的这两项计数均为零。真实 `open /about.md` 进入终端内 Vim，分页触发必要捕获并随后提交 GPU 帧，捕获 CPU 时间为 Full **0.8 ms**、Low **0.9 ms**。Low 最后提交状态是 terminal、进度为 1，闲置约 2 Hz、两秒四次 RAF；切换 Off 后 Canvas、管线帧和 RAF 均为零。采样连续性检查全部通过。
+
+本次没有 pageerror、console error 或 HTTP 失败，也没有着色器、阴影、纹理上传告警。各上下文仅保留 Three.Clock 弃用及 Windows 忽略 `powerPreference` 的两类 warning；实际适配器仍为非回退 Nvidia WebGPU。
+
+这些结果是短时 headless 管线提交测量：**CPU 提交时间不等于 GPU 执行时间**，没有测量显卡利用率、功耗、合成器成本、温度或整段旅程的最慢帧。headless RAF 不代表显示器实际刷新率，移动视口使用同一桌面 GPU，不代表实体手机。本轮没有重跑 WebGL、减少动态效果或 GPU 不可用场景，也不据此声称这些路径通过；没有测量下载预算、真实公网延迟或 Core Web Vitals。
+
+[最终原始性能数据](../.local/reports/crt-journey-v9/performance.json) 包含 16 张外部截图的绝对路径。[背板修正前记录](../.local/reports/crt-journey-v9/pre-black-backing/performance.json) 已独立归档，不作为最终结论。原始脚本沿用开发站测量的通用限制文案，本轮实际来源以报告的 origin 和首尾发布观察记录为准。
+
+PowerShell 复现（先确保该地址仍是目标静态 QA 发布）：
+
+```powershell
+$env:PERFORMANCE_BASE_URL = 'http://127.0.0.1:18088'
+$env:PERFORMANCE_SCENARIOS = 'desktop-full,mobile-full,desktop-low'
+$env:PERFORMANCE_SAMPLE_MS = '2000'
+$env:PERFORMANCE_OUTPUT_DIR = '.local/reports/crt-journey-v9'
+$env:PERFORMANCE_REPORT = '.local/reports/crt-journey-v9/performance.json'
+node apps/web/scripts/measure-performance.mjs
+```
+
+以下版本保留历史记录，其模型、雾效、部署来源和性能数字均不代表 v9。
+
+## v7 历史实测：2026-09-11，一体电脑与雾面场景
+
+更换一体式键盘电脑后，将同材质几何合并，主机保持水平、相机提供俯视，地面按变换后的支撑高度计算。背景采用全视口云场，地面混合屏幕空间云密度与少量世界细节，反射使用更低分辨率与柔化采样。视觉和支撑规则见 [CRT 场景说明](crt-journey.md)。
+
+同一台 RTX 4090、Edge 152.0.4191.66、真实非回退 Nvidia WebGPU 适配器，顺序运行 desktop-full、mobile-full、desktop-low，共 16 个约两秒样本，33 项检查通过。桌面 1440×900，移动视口 390×844；移动结果依然来自桌面 GPU，不代表手机硬件测量。
+
+| 场景 | 管线提交 FPS | 绘制次数/帧 | 三角形/帧 |
+| --- | ---: | ---: | ---: |
+| 桌面 Full 电脑介绍 | 119.85 | 34 | 22,035 |
+| 移动视口 Full 电脑介绍 | 119.89 | 34 | 22,035 |
+| 桌面 Full 滚筒 | 119.91 | 26 | 10,451 |
+| 移动视口 Full 滚筒 | 119.92 | 26 | 10,355 |
+| 桌面 Full 终端 | 59.94 | 16 | 1,755 |
+| 移动视口 Full 终端 | 59.93 | 16 | 1,755 |
+| Low 终端闲置 | 2.00 | 16 | 1,755 |
+
+相对 v6 同口径首屏的 82 次绘制、28,883 个三角形，本轮首屏绘制减少约 58.5%。桌面首屏 CPU 提交平均 0.707 ms、P95 0.90 ms；这些是 CPU 提交时间与管线帧率，不是 GPU 执行时间、显卡利用率或耗电量。
+
+真实 preset 0→1 切换与所有稳定样本均无 Canvas 重捕获和外部纹理上传。Vim 输入／分页触发必要捕获并即时提交（Full 1.1 ms、Low 0.9 ms）。Low 片头约 30 FPS、终端闲置约 2 Hz；Off 无 Canvas、渲染帧及 RAF。所有采样连续性检查通过，无 HMR 干扰。
+
+没有 pageerror 或着色器／阴影／纹理上传告警。原始开发站日志保留未运行鉴权 API 的 `/api/v1/auth/session` 502、Three.Clock 弃用及 Windows powerPreference 提示；真实静态预览另外验证资源与 API。Browser plugin not available，使用仓库 Playwright 与本机 Edge 串行测量。
+
+[本轮原始数据](../.local/reports/crt-journey-v7/performance.json)。
+
+## v6 历史实测：2026-09-11，动态 CRT 屏幕与满屏终端
+
+v6 用共享静态图集与 GPU 采样实现 DOS 滚屏、详细 GUI 加载和八种屏幕预设；物理屏幕所有内容经过 CRT，地面由反射相机重绘同一动态材质。最终穿屏时地面随启动画面淡出。以下是最后一次源码修改后的新采样，v5 数字保留在下一节。
+
+Edge 152.0.4191.66、RTX 4090，实际 WebGPU 适配器为 Nvidia Lovelace，非 fallback。桌面 1440×900 / DPR 1、移动视口 390×844 / DPR 受像素预算限制。依次运行 desktop-full、mobile-full、desktop-low，16 个稳定样本各约两秒，33 项检查全部通过。移动视口使用同一桌面 GPU，不代表手机硬件性能。
+
+| 场景 | 管线提交 FPS | 绘制次数/帧 | 三角形/帧 |
+| --- | ---: | ---: | ---: |
+| 桌面 Full 滚筒 | 120.30 | 26 | 10,451 |
+| 移动视口 Full 滚筒 | 119.84 | 26 | 10,355 |
+| 桌面 Full 终端 | 59.96 | 16 | 1,755 |
+| 移动视口 Full 终端 | 59.94 | 16 | 1,755 |
+| Low 终端闲置 | 2.00 | 16 | 1,755 |
+
+桌面滚筒 CPU 提交耗时平均 0.668 ms、P95 0.80 ms。FPS 指实际提交的渲染管线帧；CPU 提交时间不等于 GPU 执行时间，也没有测量显卡利用率或耗电。
+
+所有稳定样本均无终端 Canvas 重捕获、无 `GPUQueue.copyExternalImageToTexture` 上传；跨越八秒预设切换边界的样本实际记录 preset 0→1，同样保持两项计数为零。真实 Vim 输入和分页触发一次合并捕获（Full 1.1 ms、Low 0.9 ms），随后立即提交。Low 闲置两秒约四次 RAF，Off 无 Canvas、管线帧和 RAF。
+
+没有 pageerror 或着色器、空纹理、阴影配置警告。开发站未启动鉴权 API，因此原始日志保留每场景一次 `/api/v1/auth/session` 502，以及 Three.Clock 弃用和 Windows powerPreference 提示；最终静态预览另行检查真实 API 与资源响应。
+
+[本轮原始性能数据](../.local/reports/crt-journey-v6/performance.json)。Browser 插件不可用，测量使用仓库 Playwright 与已安装 Edge；测试串行运行，采样期间未修改应用源码。
+
+## v5 历史实测：2026-09-11，弯屏、反射与实例化字符
+
+本轮增加初始弯屏 CRT、真实平面反射、薄雾、指针响应、随机字符和二进制流；移除直接跳过开场的入口。完整视觉和维护说明见 [CRT 旅程](crt-journey.md)。滚筒几何从逐格绘制改为实例化，减少工作量后提高 Full 动画的帧率上限。
+
+使用 Edge 152.0.4191.66、1440×900 / DPR 1 和 NVIDIA RTX 4090，在同一台 Windows 机器上顺序采样。WebGL 实际为 ANGLE D3D11；WebGPU 实际申请到 NVIDIA Lovelace 的非回退适配器，powerPreference 为 high-performance。Browser 插件不可用，因此使用仓库的 Playwright 和已安装 Edge。以下为本地 Vite 场景的管线提交帧率，不能据此推导真实显示器刷新率、手机 GPU 表现或 GPU 利用率。
+
+| 场景 | 修改前 WebGL | 本轮 WebGL | 本轮 WebGPU |
+| --- | ---: | ---: | ---: |
+| 电脑介绍画面，平均管线 FPS | 28.84 | 119.67 | 119.66 |
+| 滚筒 50% 停驻，平均管线 FPS | 29.12 | 119.96 | 119.69 |
+| 滚筒，每帧 draw calls | 167 | 26 | 26 |
+| 滚筒，每帧三角形 | 405,945 | 10,451 | 10,451 |
+| 滚筒，P95 帧间隔 | 35.4 ms | 8.6 ms | 8.6 ms |
+| 终端闲置，平均管线 FPS | 29.12 | 59.97 | 59.96 |
+
+同后端的滚筒 draw calls 减少 84.43%，三角形减少 97.43%。这些计数包含反射和后处理，不仅是滚筒网格。当前 WebGPU 滚筒 CPU 提交耗时平均 0.665 ms、P95 0.90 ms；这不是 GPU 执行计时。终端每帧为 20 次绘制、3,499 个三角形，增加了反射等工作，不能将所有阶段都描述成绘制量降低。
+
+桌面与 390×844 手机视口的 WebGPU、桌面强制 WebGL、Low、减少动态效果、桌面/手机 Off 和禁用 GPU 共八个全新上下文顺序运行，每个稳定样本约四秒。47 项检查通过；阶段交接和轮滚/触屏另由四项真实浏览器开场 E2E 验证。手机视口使用同一桌面显卡，DPR 限制到 1.65，滚筒管线约 119.92 FPS；此数字不代表手机硬件测试。
+
+所有稳定样本都没有重绘终端文字纹理。Vim 翻页触发一次合并后的文字重绘，约 1.4 ms CPU 时间。减少动态效果的稳定终端为零管线帧、零 RAF；Off 及 GPU 不可用时没有图形 canvas、管线帧或 RAF。Full 的 RAF 调度次数与提交帧率不同，浏览器合成、CSS 动画及 GPU 耗电没有测量。
+
+矩阵还发现 Low 切换时 Fiber 时钟归零导致刷新被旧节流时间阻挡，以及 Fiber 的旧阴影默认值重复告警；修正调度与阴影配置后的 25 项复测通过。Low 最后提交阶段为 terminal、进度为 1，闲置约 2 Hz，真实 Vim 输入及分页之后立即提交更新；稳定区间不重画文字。首次矩阵的 Low 零帧记录代表已修复的问题，不能用它声称 Low 正常省电。首次纹理资源也显式初始化，短 WebGPU 冷启动确认阴影及空纹理警告消失。所有上下文均无 pageerror；本地开发 API 未启动产生的 502、Three.Clock 弃用及 Windows powerPreference 提示在原始记录中保留。
+
+证据：[修改前基线](../.local/reports/crt-journey-v5/baseline.json)、[八场景矩阵](../.local/reports/crt-journey-v5/final-performance.json)、[Full / Low 调度复测](../.local/reports/crt-journey-v5/targeted-final-performance.json)、[WebGPU 首帧复测](../.local/reports/crt-journey-v5/first-frame-final.json)。性能脚本现在测量实际渲染和终端交互，不再测量旧版的 gzip 资源预算或后台登录成本。
+
+PowerShell 复现（先启动开发站或使用隔离静态预览）：
+
+```powershell
+$env:PERFORMANCE_BASE_URL = 'http://127.0.0.1:18088'
+$env:PERFORMANCE_OUTPUT_DIR = '.local/reports/crt-journey-v5'
+$env:PERFORMANCE_BROWSER_CHANNEL = 'msedge'
+node apps/web/scripts/measure-performance.mjs
+```
+
+可用 `PERFORMANCE_SCENARIOS` 选择逗号分隔的场景，`PERFORMANCE_SAMPLE_MS` 调整每个样本时长。固定测试硬件、浏览器版本与视口，并避免同时运行其他浏览器测试；热更新会使稳定计时失效。
+
+## 历史记录：2026-09-09，v4.1
+
+**以下保留旧版实测原文。其体积、跳过入口、时间设定、硬件模型、绘制频率和脚本方法均属于当时版本，不代表当前实现。历史命令和断言不能直接用于本轮脚本。**
 
 当前 v4.1 默认完整体验的首页外部 JavaScript 合计 **548.25 KiB gzip**，其中独立加载的 GPU 场景为 **432.95 KiB**。**完整体验超过了原先 300 KiB 的首页预算。** 本轮包含八阶段开场、按图像亮度生成的 Mac Face ASCII、随滚动旋转的圆柱屏幕、电子元件与整系统 CRT；基础 Off 路径的体积不代表默认完整体验的成本。
 

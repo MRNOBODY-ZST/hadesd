@@ -4,15 +4,18 @@ import { community, errorText } from "./api";
 import "./community.css";
 
 export type AccountView = "login" | "register" | "profile" | "files" | "comments";
-type AccountState = { user: UserAccount | null; setUser: (user: UserAccount | null) => void; open: (view?: AccountView) => void; logout: () => Promise<void> };
+type AccountState = { user: UserAccount | null; view: AccountView | null; notice: string; clearNotice: () => void; close: () => void; setUser: (user: UserAccount | null) => void; open: (view?: AccountView) => void; logout: () => Promise<void> };
 const Context = createContext<AccountState | null>(null);
 const AccountPanel = lazy(() => import("./AccountPanel"));
 export function useAccount() { const value = useContext(Context); if (!value) throw new Error("AccountProvider missing"); return value; }
+export function useOptionalAccount() { return useContext(Context); }
 export function AccountProvider({ children }: { children: ReactNode }) {
   const [user, updateUser] = useState<UserAccount | null>(null), [view, setView] = useState<AccountView | null>(null);
   const generation = useRef(0);
   const setUser = useCallback((value: UserAccount | null) => { generation.current++; updateUser(value); }, []);
   const [notice, setNotice] = useState("");
+  const close = useCallback(() => setView(null), []);
+  const clearNotice = useCallback(() => setNotice(""), []);
   const open = useCallback((next: AccountView = "profile") => { setNotice(""); setView(next); }, []);
   const logout = useCallback(async () => { await community.logout(); setUser(null); setView(null); }, [setUser]);
   useEffect(() => {
@@ -26,27 +29,33 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     const action = (event: Event) => {
       const value = (event as CustomEvent<{ action: string }>).detail?.action;
       if (value === "logout") void logout().catch(error => setNotice(errorText(error)));
-      else if (["login", "register", "profile"].includes(value)) open(value as AccountView);
+      else if (["login", "register", "profile", "files", "comments"].includes(value)) open(value as AccountView);
     };
     const focus = synchronize;
     window.addEventListener("hadesd:account", action); window.addEventListener("hadesd:account-expired", expired);
     window.addEventListener("focus", focus);
     return () => { controller.abort(); window.removeEventListener("hadesd:account", action); window.removeEventListener("hadesd:account-expired", expired); window.removeEventListener("focus", focus); };
   }, [open, logout, setUser]);
-  const value = useMemo(() => ({ user, setUser, open, logout }), [user, open, logout, setUser]);
-  return <Context value={value}>{children}
-    {notice && <div className="community-toast" role="status">{notice}<button onClick={() => { setNotice(""); open("login"); }}>登录</button><button aria-label="关闭通知" onClick={() => setNotice("")}>×</button></div>}
-    {view && <Suspense fallback={<div className="community-toast" role="status">正在打开账户…</div>}><AccountPanel initialView={view} onClose={() => setView(null)} /></Suspense>}
-  </Context>;
+  const value = useMemo(() => ({ user, view, notice, clearNotice, close, setUser, open, logout }), [user, view, notice, clearNotice, close, open, logout, setUser]);
+  return <Context value={value}>{children}</Context>;
+}
+export function AccountNotice() {
+  const { notice, clearNotice, open, user } = useAccount();
+  return notice ? <div className="community-notice" role="status">{notice}{!user && <button onClick={() => open("login")}>登录</button>}<button aria-label="关闭通知" onClick={clearNotice}>×</button></div> : null;
+}
+export function AccountWorkspace() {
+  const { view, close } = useAccount();
+  if (!view) return null;
+  return <><AccountNotice /><Suspense fallback={<p role="status">正在打开账户…</p>}><AccountPanel initialView={view} onClose={close} /></Suspense></>;
 }
 export function AccountBar() {
-  const { user, open, logout } = useAccount();
+  const { user, view, open, logout } = useAccount();
   const [error, setError] = useState(""), [busy, setBusy] = useState(false);
   return <div className="community-bar" data-terminal-reveal="1">
     <span>{user ? `@${user.username}` : "GUEST SESSION"}</span>
     <nav aria-label="读者账户">
       {user ? <><button aria-label="账户" onClick={() => open("profile")}>[ {user.displayName} ]</button><button onClick={() => open("files")}>我的文件</button>{user.role === "ADMIN" && <a href="/admin/">写作台 ↗</a>}<button disabled={busy} onClick={() => { setBusy(true); void logout().catch(e => setError(errorText(e))).finally(() => setBusy(false)); }}>退出</button></>
         : <><button aria-label="账户" onClick={() => open("login")}>登录</button><button onClick={() => open("register")}>注册</button></>}
-    </nav>{error && <span role="alert">{error}</span>}
+    </nav>{error && <span role="alert">{error}</span>}{!view && <AccountNotice />}
   </div>;
 }

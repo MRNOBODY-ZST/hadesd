@@ -1,12 +1,20 @@
-import { Modal } from "./Modal";
+import { TerminalProgram } from "./TerminalProgram";
 import { usePreferences } from "./store";
 import type { Theme, CrtLevel } from "@hadesd/contracts";
 export function Settings() {
   const p = usePreferences();
   return (
-    <Modal
+    <TerminalProgram
       label="DISPLAY / 显示设置"
       onClose={() => p.toggle("settingsOpen", false)}
+      help="theme amber|green|paper · crt off|low|full · reader on|off · :q 返回"
+      onCommand={command => {
+        const [name, value, extra] = command.split(/\s+/);
+        if (!extra && name === "theme" && ["amber", "green", "paper"].includes(value)) { p.setTheme(value as Theme); return "主题已保存。"; }
+        if (!extra && name === "crt" && ["off", "low", "full"].includes(value)) { p.setCrt(value as CrtLevel); return "CRT 设置已保存。"; }
+        if (!extra && name === "reader" && ["on", "off"].includes(value)) { p.setReader(value === "on"); return "阅读设置已保存。"; }
+        return "用法：theme amber|green|paper，crt off|low|full，reader on|off。";
+      }}
     >
       <div className="settings-body">
         <fieldset>
@@ -54,6 +62,6 @@ export function Settings() {
         </label>
         <p className="settings-note">设置仅保存在当前浏览器。</p>
       </div>
-    </Modal>
+    </TerminalProgram>
   );
 }

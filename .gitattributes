@@ -1,0 +1,4 @@
+# Shell entrypoints must remain executable when checked out on Windows and sent to Linux.
+*.sh text eol=lf
+backend/gradlew text eol=lf
+infra/deploy/hadesd-compose text eol=lf

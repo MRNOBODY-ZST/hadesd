@@ -3,4 +3,5 @@ set -eu
 cd /opt/hadesd/app
 exec docker compose --env-file /etc/hadesd/app.env \
   -f infra/compose/compose.yaml \
-  -f infra/compose/compose.production.yaml "$@"
+  -f infra/compose/compose.production.yaml \
+  -f infra/compose/compose.minio.yaml "$@"

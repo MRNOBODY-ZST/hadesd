@@ -1,8 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
 import { Markdown, MarkdownImage } from "@hadesd/markdown";
 import type { BlogComment, Media, Page } from "@hadesd/contracts";
-import { Modal } from "../shell/Modal";
+import { TerminalProgram } from "../shell/TerminalProgram";
 import { useAccount } from "./Account";
 import { FILE_ACCEPT, PageButtons } from "./AccountPanel";
 import { community, errorText, fileSize, fileUrl } from "./api";
@@ -20,15 +19,19 @@ function CommentComposer({ contentId, draft, onClose, onSaved }: { contentId: st
     try { for (const file of selected) { const uploaded = await community.upload(file); setAttachments(value => [...value, uploaded]); } }
     catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   }
-  async function save(event: FormEvent) {
-    event.preventDefault(); if (!user) { open("login"); return; }
-    if (!body.trim()) { setError("请填写评论内容。"); return; }
+  async function save() {
+    if (busy) return false;
+    if (!user) { open("login"); return false; }
+    if (!body.trim()) { setError("请填写评论内容。"); return false; }
     setBusy(true); setError("");
     const input = { body, attachmentIds: attachments.map(a => a.id), ...(draft.reply ? { parentId: draft.reply.parentId || draft.reply.id } : {}) };
-    try { if (draft.edit) await community.editComment(draft.edit.id, input); else await community.addComment(contentId, input); onSaved(); }
-    catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+    try { if (draft.edit) await community.editComment(draft.edit.id, input); else await community.addComment(contentId, input); onSaved(); return true; }
+    catch (e) { setError(errorText(e)); return false; } finally { setBusy(false); }
   }
-  return createPortal(<Modal label={draft.edit ? "编辑评论" : draft.reply ? "回复评论" : "发表评论"} onClose={() => { if (!busy) onClose(); }}><form className="community-panel community-form" onSubmit={event => void save(event)}>
+  return <TerminalProgram label={draft.edit ? "编辑评论" : draft.reply ? "回复评论" : "发表评论"} onClose={() => { if (!busy) onClose(); }}
+    help=":wq 保存并返回 · :q / Esc / Ctrl+C 放弃编辑 · Tab 切换字段"
+    onCommand={async command => command === ":wq" ? await save() ? "评论已保存。" : "评论尚未保存。" : "输入 :wq 保存评论，或 :q 返回。"}>
+    <form className="community-panel community-form" onSubmit={event => { event.preventDefault(); void save(); }}>
     {draft.reply && <p className="community-hint">回复 @{draft.reply.author.username}：{draft.reply.body.slice(0, 80)}</p>}
     <div className="community-tabs"><button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑</button><button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>预览</button></div>
     {preview ? <div className="community-comment-preview"><Markdown source={body || "*还没有评论内容。*"} /></div> : <label>评论内容<textarea data-autofocus aria-label="评论内容" required maxLength={4000} rows={7} value={body} onChange={e => setBody(e.target.value)} /></label>}
@@ -39,7 +42,7 @@ function CommentComposer({ contentId, draft, onClose, onSaved }: { contentId: st
     <p className="community-hint">发布后附件可公开访问。移除附件不会删除“我的文件”中的原文件。</p>
     {error && <p role="alert" className="community-error">{error}</p>}
     {user ? <button className="community-primary" type="submit" disabled={busy}>{busy ? "正在保存…" : draft.edit ? "保存修改" : draft.reply ? "发表回复" : "发表评论"}</button> : <button type="button" onClick={() => open("login")}>登录后继续，保留当前草稿</button>}
-  </form></Modal>, document.body);
+  </form></TerminalProgram>;
 }
 export function Comments({ contentId }: { contentId: string }) {
   const { user, open } = useAccount();

@@ -13,6 +13,8 @@ readonly MEDIA_ROOT=/srv/hadesd/media
 readonly PUBLISHED_ROOT=/srv/hadesd/published
 readonly CONFIG_ENV=/etc/hadesd/app.env
 readonly ADMIN_PASSWORD=/etc/hadesd/admin-password
+readonly SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$SCRIPT_DIR/storage-backup.sh"
 backup_dir=''
 stage=preflight
 
@@ -46,7 +48,7 @@ done
 [[ -f "$ADMIN_PASSWORD" && ! -L "$ADMIN_PASSWORD" ]] || fail 'administrator password file is unavailable'
 [[ $(stat -c '%u:%a' "$CONFIG_ENV") == 0:600 ]] || fail 'private environment file must be root-owned mode 600'
 [[ $(stat -c '%u:%a' "$ADMIN_PASSWORD") == 1000:400 ]] || fail 'administrator password file must be UID 1000 mode 400'
-[[ -d "$MEDIA_ROOT" && -d "$PUBLISHED_ROOT" ]] || fail 'source data directories are unavailable'
+[[ -d "$PUBLISHED_ROOT" ]] || fail 'published source directory is unavailable'
 [[ -L "$PUBLISHED_ROOT/current" && -f "$PUBLISHED_ROOT/current/manifest.json" ]] || fail 'current release manifest is unavailable'
 [[ ! -L "$BACKUP_ROOT" ]] || fail 'backup root must not be a symbolic link'
 install -d -m 700 -o root -g root "$BACKUP_ROOT"
@@ -59,6 +61,12 @@ mkdir -m 700 "$backup_dir"
 printf 'INCOMPLETE\nstage=starting\n' > "$backup_dir/INCOMPLETE"
 
 run_backup() {
+  stage=storage_configuration
+  local storage_mode
+  storage_mode=$(hadesd_detect_storage "$COMPOSE")
+  if [[ $storage_mode == local ]]; then
+    [[ -d "$MEDIA_ROOT" ]]
+  fi
   stage=release_snapshot
   local target_before target_after manifest_before manifest_after database_hash
   target_before=$(readlink -f "$PUBLISHED_ROOT/current")
@@ -81,9 +89,9 @@ run_backup() {
   [[ -s "$backup_dir/database.sql" ]]
   (cd "$backup_dir" && sha256sum database.sql > database.sha256 && sha256sum --check --status database.sha256)
 
-  stage=media_copy
-  mkdir -m 700 "$backup_dir/media" "$backup_dir/published" "$backup_dir/private"
-  cp -a -- "$MEDIA_ROOT/." "$backup_dir/media/"
+  stage=media_backup
+  mkdir -m 700 "$backup_dir/published" "$backup_dir/private"
+  hadesd_backup_media "$COMPOSE" "$storage_mode" "$MEDIA_ROOT" "$backup_dir"
 
   stage=published_copy
   # Tar retains the relative current symlink, ownership and file permissions.
@@ -108,8 +116,8 @@ run_backup() {
   (cd "$backup_dir" && sha256sum --check --status database.sha256 && sha256sum current-manifest.json > current-manifest.sha256 && sha256sum --check --status current-manifest.sha256)
   database_hash=$(sha256sum "$backup_dir/database.sql")
   database_hash=${database_hash%% *}
-  printf 'createdAt=%s\nreleaseTarget=%s\ndatabaseSha256=%s\ncurrentManifestSha256=%s\nconsistency=manual-quiesced-window\n' \
-    "$(date -u +%FT%TZ)" "${target_before#"$PUBLISHED_ROOT/"}" "$database_hash" "$manifest_before" > "$backup_dir/summary.txt"
+  printf 'createdAt=%s\nreleaseTarget=%s\ndatabaseSha256=%s\ncurrentManifestSha256=%s\nstorageMode=%s\nconsistency=manual-quiesced-window\n' \
+    "$(date -u +%FT%TZ)" "${target_before#"$PUBLISHED_ROOT/"}" "$database_hash" "$manifest_before" "$storage_mode" > "$backup_dir/summary.txt"
   # Publish the completion marker by atomic rename only after its write succeeds.
   printf 'VERIFIED\n' > "$backup_dir/.complete.tmp"
   rm -- "$backup_dir/INCOMPLETE"

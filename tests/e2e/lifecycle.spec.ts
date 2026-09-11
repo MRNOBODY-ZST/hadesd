@@ -4,9 +4,9 @@ const api='/api/v1';
 async function login(request:APIRequestContext){const token=await (await request.get(api+'/auth/csrf')).json();const response=await request.post(api+'/auth/login',{form:{username:process.env.ADMIN_BOOTSTRAP_USERNAME||'hades',password:(await readFile(process.env.ADMIN_BOOTSTRAP_PASSWORD_FILE!,'utf8')).trim()},headers:{[token.headerName]:token.token}});expect(response.status()).toBe(200);return(await request.get(api+'/auth/csrf')).json();}
 async function waitJob(request:APIRequestContext,id:string){for(let n=0;n<180;n++){const result=await request.get(api+`/admin/publish-jobs/${id}`);expect(result.ok()).toBeTruthy();const job=await result.json();if(job.status==='SUCCEEDED')return job;expect(job.status,job.error||'publisher job failed').not.toBe('FAILED');await new Promise(r=>setTimeout(r,1000));}throw new Error('Publisher timeout');}
 async function enterTerminal(page:Page){
+ await page.emulateMedia({reducedMotion:'reduce'});
  const stage=page.locator('.terminal-stage');
  await expect(stage).toHaveAttribute('data-renderer',/^(WebGPU|WebGL2|DOM)$/,{timeout:35000});
- if(await stage.getAttribute('data-stage-ready')!=='true')await page.getByRole('button',{name:'跳过片头，进入终端',exact:true}).click();
  await expect(stage).toHaveAttribute('data-stage-ready','true',{timeout:35000});
  await expect(stage).toHaveAttribute('data-reveal-step','7');
 }

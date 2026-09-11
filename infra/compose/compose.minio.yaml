@@ -1,0 +1,64 @@
+# Add after compose.yaml. MinIO is private and the application has a bucket-scoped
+# identity; only the one-time init service receives the root credentials.
+services:
+  minio:
+    image: hadesd/minio:2025-10-15
+    build:
+      context: ../..
+      dockerfile: infra/compose/Minio.Dockerfile
+      target: server
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?run node scripts/setup-minio.mjs}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run node scripts/setup-minio.mjs}
+      MINIO_BROWSER: "off"
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes: ["minio-data:/data"]
+    networks: [private]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    mem_limit: 768m
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  minio-init:
+    image: hadesd/minio-client:2025-08-13
+    build:
+      context: ../..
+      dockerfile: infra/compose/Minio.Dockerfile
+      target: client
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      S3_BUCKET: ${S3_BUCKET:-hadesd-media}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?run node scripts/setup-minio.mjs}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?run node scripts/setup-minio.mjs}
+      MC_CONFIG_DIR: /tmp/mc
+    entrypoint: ["/bin/sh", "/opt/minio-init.sh"]
+    volumes: ["./minio-init.sh:/opt/minio-init.sh:ro"]
+    networks: [private]
+    depends_on:
+      minio: {condition: service_healthy}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: "no"
+  backend:
+    environment:
+      STORAGE_MODE: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-hadesd-media}
+      S3_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?required}
+    depends_on:
+      minio-init: {condition: service_completed_successfully}
+volumes:
+  minio-data:
