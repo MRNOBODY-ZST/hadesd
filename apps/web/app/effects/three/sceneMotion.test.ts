@@ -52,3 +52,18 @@ it("fades the world into pure black around full-screen CRT stages", () => {
   expect(sceneMotion("journey", 0, MAC_SCREEN_HANDOFF).worldAlpha).toBe(0);
   expect(sceneMotion("journey", 0, 1).worldAlpha).toBe(0);
 });
+it("never brings the physical world back over the carousel while scrolling in either direction", () => {
+  const travel = Array.from({ length: 1001 }, (_, index) => index / 1000);
+  let previous = 1;
+  for (const p of travel) {
+    const alpha = sceneMotion("journey", 0, p).worldAlpha;
+    expect(alpha).toBeLessThanOrEqual(previous);
+    if (p >= MAC_SCREEN_HANDOFF) expect(alpha).toBe(0);
+    previous = alpha;
+  }
+  for (const p of [...travel].reverse()) {
+    const alpha = sceneMotion("journey", 0, p).worldAlpha;
+    if (p >= MAC_SCREEN_HANDOFF) expect(alpha).toBe(0);
+  }
+  expect(sceneMotion("journey", 0, 0).worldAlpha).toBe(sceneMotion("hero", 0, 0).worldAlpha);
+});

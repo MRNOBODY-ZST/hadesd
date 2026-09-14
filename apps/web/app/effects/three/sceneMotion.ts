@@ -18,9 +18,10 @@ export function sceneMotion(phase: IntroPhase, t: number, p: number) {
   // Restore the continuous push through the last card; keep it in front of the
   // near plane until transparent, without pulsing its height or flashing it.
   const entryDepth = phase === "penetrate" ? 9.8 * smooth(0, 1, t) : 0;
+  // The ground, reflection and fog belong to the physical Mac. Once inside its
+  // screen, keep them hidden: the ground otherwise cuts across the carousel.
   const worldAlpha = phase === "pullback" ? framed : phase === "hero" ? 1
-    : phase === "journey" ? (p < MAC_SCREEN_HANDOFF ? 1 - smooth(.18, .265, p)
-      : smooth(.285, .38, p) * (1 - smooth(.90, 1, p))) : 0;
+    : phase === "journey" ? 1 - smooth(.18, .265, p) : 0;
   return { framed, bootMix, burst, entryDepth, worldAlpha, bootAlpha: 1 - acquisition, terminalAlpha: acquisition };
 }
 /** Keep HiDPI buffers bounded without pretending to measure GPU utilization. */
