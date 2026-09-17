@@ -7,7 +7,7 @@
 - GET /admin/contents/{id} → Content; POST /admin/contents/{id}/revisions {version,...RevisionInput} → Content，乐观锁409。
 - GET /admin/contents/{id}/revisions → Page<Revision>; GET /admin/contents/{id}/revisions/{rid} → Revision。
 - GET/POST /admin/media → Page<Media>/Media，POST multipart 字段 file；GET /admin/media/{id}/content 私有预览；DELETE /admin/media/{id} →204。
-- GET/PUT /admin/settings → SiteSettings。
+- GET/PUT /admin/settings → SiteSettings。`heroTitle` 为可选字符串（允许 null，最多 120 字符），用于开场标题，支持换行；省略或留空保持经典开场。其余身份字段继续保存到站点设置并随发布生效。
 - POST /admin/publish-jobs PublishRequest → PublishJob; GET /admin/publish-jobs/{id} → PublishJob；GET /admin/releases → Page<Release>；POST /admin/releases/{id}/rollback-jobs → PublishJob。
 - GET /public/release → ReleaseInfo; GET /public/site → SiteSettings; GET /public/contents → Page<PublicContent> 支持type,tag,page,size,releaseId；GET /public/contents/{id} → PublicContent。
 - GET /public/tags → string[]; GET /public/search?q=&page=&size=&releaseId= → Page<PublicContent>; GET /public/media/{id} 在线引用才允许。

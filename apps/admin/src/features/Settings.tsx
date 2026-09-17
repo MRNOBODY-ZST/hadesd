@@ -97,6 +97,17 @@ function SettingsForm({ initial }: { initial: SiteSettings }) {
               />
             </label>
             <label>
+              开场标题
+              <textarea
+                rows={2}
+                maxLength={120}
+                value={value.heroTitle ?? ""}
+                placeholder={"让想象，\n接通现实。"}
+                onChange={(e) => field("heroTitle", e.target.value)}
+              />
+              <small>支持换行，建议两行短句；留空沿用经典开场。保存后随下一次发布生效。</small>
+            </label>
+            <label>
               个人简介
               <textarea
                 rows={4}

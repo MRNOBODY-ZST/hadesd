@@ -2018,6 +2018,13 @@
                 "url"
               ]
             }
+          },
+          "heroTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
           }
         },
         "required": [

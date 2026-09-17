@@ -3,8 +3,10 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { activateRelease, currentRelease, prepareRelease, pruneExpiredReleases, validId } from './release.mjs';
+import { normalizeSiteOrigin } from '../../../packages/contracts/src/site-origin.mjs';
 
 const workspace=path.resolve(import.meta.dirname,'../../..');
+const siteOrigin=normalizeSiteOrigin(process.env.SITE_ORIGIN);
 const root=path.resolve(process.env.RELEASE_ROOT||path.join(workspace,'.local/published'));
 const api=new URL('/api/v1/internal/',process.env.API_ORIGIN||'http://127.0.0.1:28080');
 const token=process.env.WORKER_TOKEN;
@@ -32,7 +34,7 @@ function build(snapshotFile,buildDir,signal) {
     // Fixed command/arguments. Article text, slugs and user input never become executable text.
     const child=spawn('pnpm',['--filter','@hadesd/web','build'],{
       cwd:workspace, shell:false, signal,
-      env:{PATH:process.env.PATH,HOME:process.env.HOME,CI:'true',NODE_ENV:'production',...(buildHeapMb===undefined?{}:{NODE_OPTIONS:`--max-old-space-size=${Number(buildHeapMb)}`}),HADESD_SNAPSHOT:snapshotFile,HADESD_BUILD_DIR:buildDir,SITE_ORIGIN:process.env.SITE_ORIGIN||'https://hadesd.sh'},
+      env:{PATH:process.env.PATH,HOME:process.env.HOME,CI:'true',NODE_ENV:'production',...(buildHeapMb===undefined?{}:{NODE_OPTIONS:`--max-old-space-size=${Number(buildHeapMb)}`}),HADESD_SNAPSHOT:snapshotFile,HADESD_BUILD_DIR:buildDir,SITE_ORIGIN:siteOrigin},
       stdio:['ignore','pipe','pipe']
     });
     // Drain output without retaining or logging article text, private paths or environment values.
@@ -63,7 +65,7 @@ export async function runOnce() {
     const snapshotFile=path.join(work,'snapshot.json');await writeFile(snapshotFile,JSON.stringify(snapshot),{mode:0o600});
     const buildDir=path.join(work,'build');
     await build(snapshotFile,buildDir,controller.signal);if(leaseError)throw leaseError;
-    await prepareRelease({root,buildClient:path.join(buildDir,'client'),snapshot,origin:process.env.SITE_ORIGIN||'https://hadesd.sh'});
+    await prepareRelease({root,buildClient:path.join(buildDir,'client'),snapshot,origin:siteOrigin});
     console.log(`validated ${id}`);
     await status('READY'); if(leaseError)throw leaseError;
     console.log(`ready ${id}`);

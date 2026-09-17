@@ -21,6 +21,7 @@ export function Terminal({ dispatchRef, children }: { children?: ReactNode; disp
   const preferences = usePreferences();
   const account = useOptionalAccount();
   const username = account?.user?.username ?? "guest";
+  const hostname = data.siteOrigin ? new URL(data.siteOrigin).hostname : "hadesd";
   const home = homeForUser(username);
   const nodes = useMemo(() => createVfs(data.contents, username), [data.contents, username]);
   const [cwd, setCwd] = useState(() => routeCwd === "/" ? home : routeCwd);
@@ -164,11 +165,11 @@ export function Terminal({ dispatchRef, children }: { children?: ReactNode; disp
     let tokens: string[] = [];
     try { tokens = tokenize(command); } catch { /* execute renders syntax errors. */ }
     const isAccount = ACCOUNT_COMMANDS.has(tokens[0] ?? "");
-    const id = append({ input: visibleCommand, prompt: `${username}@hadesd:${displayPath(cwd, home)} $`, outputs: [], private: isAccount });
+    const id = append({ input: visibleCommand, prompt: `${username}@${hostname}:${displayPath(cwd, home)} $`, outputs: [], private: isAccount });
     try {
       if (isAccount && await cli.start(tokens[0]!, tokens.slice(1), context)) return;
       const result = await execute(command, {
-        cwd, home, user: username, nodes, previousCwd: previousCwd.current, startedAt: startedAt.current,
+        cwd, home, user: username, hostname, nodes, previousCwd: previousCwd.current, startedAt: startedAt.current,
         history: history.current, releaseId: data.releaseId, theme: preferences.theme, crt: preferences.crt, reader: preferences.reader,
         changeDirectory,
         navigate: target => { open(target); },
@@ -342,7 +343,7 @@ export function Terminal({ dispatchRef, children }: { children?: ReactNode; disp
       event.preventDefault(); event.stopPropagation(); void run(`${node.kind === "directory" ? "ls" : "open"} ${JSON.stringify(node.path)}`);
     }
   }}>
-    <div className="terminal-session" aria-label="终端状态"><Link to="/" aria-label="HADESD 首页">HADESD / TTY 01</Link><span>SESSION: {account?.user ? "@" + username : "GUEST"}</span><span className="session-connected">● CONNECTED</span></div>
+    <div className="terminal-session" aria-label="终端状态"><Link to="/" aria-label={`${data.site.title} 首页`}>{data.site.title} / TTY 01</Link><span>SESSION: {account?.user ? "@" + username : "GUEST"}</span><span className="session-connected">● CONNECTED</span></div>
     <div ref={screenRef} className="terminal-transcript screen-viewport" role="region" aria-label="终端历史记录" tabIndex={0} hidden={!!buffer || !!program}
       onScroll={event => { const el = event.currentTarget; followTail.current = el.scrollHeight - el.clientHeight - el.scrollTop < 32; }}
       onClick={event => { if (event.target instanceof Element && !event.target.closest("a,button,input,textarea,select,summary") && !window.getSelection()?.toString()) screenRef.current?.focus({preventScroll:true}); }}>
@@ -358,7 +359,7 @@ export function Terminal({ dispatchRef, children }: { children?: ReactNode; disp
     {buffer && <div className="terminal-vim-screen" hidden={!!program}><VimBuffer key={buffer.node.path} path={buffer.node.path} markdown={buffer.text} identity={account?.user?.role === "ADMIN" ? account.user.id : undefined} loadDraft={account?.user?.role === "ADMIN" && buffer.node.contentId ? signal => loadBlogDraft(buffer.node.contentId!, signal) : undefined} onClose={() => { setBuffer(null); requestAnimationFrame(focusInput); }} /></div>}
     <div className="terminal-command-area" hidden={!!buffer || !!program}>
       <form className="terminal-input" onSubmit={event => { event.preventDefault(); void submit(); }}>
-        <label htmlFor={cli.prompt?.secret ? "terminal-secret" : "terminal-command"} className="prompt">{cli.prompt ? cli.prompt.label : <><span>{username}@hadesd</span>:{displayPath(cwd, home)}<b>$</b></>}</label>
+        <label htmlFor={cli.prompt?.secret ? "terminal-secret" : "terminal-command"} className="prompt">{cli.prompt ? cli.prompt.label : <><span>{username}@{hostname}</span>:{displayPath(cwd, home)}<b>$</b></>}</label>
         <div className="terminal-field" data-block-cursor={!hasSelection && !cli.prompt?.secret}>
             {cli.prompt?.secret ? <input id="terminal-secret" ref={secretField} type="password" aria-label={cli.prompt.label} autoComplete="off" autoCapitalize="off" spellCheck={false} value={input} onChange={e => setInput(e.currentTarget.value)} onKeyDown={e => {
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;

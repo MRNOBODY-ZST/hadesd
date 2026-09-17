@@ -126,19 +126,27 @@ public final class Api {
       @NotNull @Size(max = 500) String introduction,
       @NotNull @Size(max = 5000) String homeText,
       @NotNull @Size(max = 15) List<@jakarta.validation.Valid Navigation> navigation,
-      @NotNull @Size(max = 50) List<@jakarta.validation.Valid Link> links) {
+      @NotNull @Size(max = 50) List<@jakarta.validation.Valid Link> links,
+      @Size(max = 120) String heroTitle) {
+    public SiteSettings(
+        String title, String tagline, String introduction, String homeText,
+        List<Navigation> navigation, List<Link> links) {
+      this(title, tagline, introduction, homeText, navigation, links, null);
+    }
+
     public static SiteSettings defaults() {
       return new SiteSettings(
-          "HADESD",
-          "a personal daemon.",
-          "Hades",
-          "记录研究、工程与思考。让好奇心持续运行。",
+          "我的博客",
+          "记录与分享",
+          "欢迎来到我的博客。",
+          "记录生活、分享知识，留下自己的文字。",
           List.of(
               new Navigation("文章", "/posts"),
               new Navigation("项目", "/projects"),
               new Navigation("研究", "/research"),
               new Navigation("关于", "/about")),
-          List.of());
+          List.of(),
+          "记录此刻，\n分享所想。");
     }
   }
 

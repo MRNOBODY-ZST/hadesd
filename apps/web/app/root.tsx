@@ -9,7 +9,7 @@ import {
   type LinksFunction,
 } from "react-router";
 import type { ReactNode } from "react";
-import { snapshot, publicIndex } from "./snapshot.server";
+import { snapshot, publicIndex, siteOrigin } from "./snapshot.server";
 import { Shell } from "./shell/Shell";
 import "@hadesd/ui/tokens.css";
 import "@hadesd/ui/crt.css";
@@ -19,6 +19,7 @@ export function loader() {
     releaseId: snapshot.releaseId,
     createdAt: snapshot.createdAt,
     site: snapshot.site,
+    siteOrigin,
     contents: publicIndex,
   };
 }
@@ -27,7 +28,7 @@ export const links: LinksFunction = () => [
   {
     rel: "alternate",
     type: "application/rss+xml",
-    title: "HADESD RSS",
+    title: "RSS",
     href: "/rss.xml",
   },
 ];

@@ -1,0 +1,30 @@
+# Generic single-host deployment. Combine with compose.yaml, using .env.docker.
+# Docker Compose >= 2.24.4 is required for !override.
+name: ${COMPOSE_PROJECT_NAME:-personal-blog}
+services:
+  backend:
+    image: ${COMPOSE_PROJECT_NAME:-personal-blog}/backend:local
+    user: "${APP_UID:?run deploy.sh init}:${APP_GID:?run deploy.sh init}"
+    environment:
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+  publisher:
+    image: ${COMPOSE_PROJECT_NAME:-personal-blog}/publisher:local
+    build:
+      args:
+        APP_UID: ${APP_UID:?run deploy.sh init}
+        APP_GID: ${APP_GID:?run deploy.sh init}
+    user: "${APP_UID}:${APP_GID}"
+    mem_limit: ${PUBLISHER_MEMORY_LIMIT:-2g}
+    environment:
+      SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:18088}
+  nginx:
+    image: ${COMPOSE_PROJECT_NAME:-personal-blog}/nginx:local
+    build:
+      args:
+        STANDALONE_SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:18088}
+        TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+    ports: !override
+      - target: 8080
+        published: "${LOCAL_PORT:-18088}"
+        host_ip: ${HTTP_BIND_IP:-127.0.0.1}
+        protocol: tcp

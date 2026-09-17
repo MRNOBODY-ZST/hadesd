@@ -1,0 +1,47 @@
+.foreground-preview {
+  position: absolute;
+  z-index: 12;
+  top: max(20px, env(safe-area-inset-top));
+  right: max(22px, env(safe-area-inset-right));
+  width: 330px;
+  color: #e7dcc9;
+  background: #111512f2;
+  border: 1px solid #665c43;
+  box-shadow: 5px 5px 0 #0008;
+  font: 11px/1.5 var(--font-mono), monospace;
+  touch-action: auto;
+}
+.foreground-preview-heading { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid #665c435c; letter-spacing: .1em; }
+.foreground-preview-heading span { display: flex; gap: 9px; align-items: center; }
+.foreground-preview-heading i { width: 5px; height: 5px; background: #d6b477; box-shadow: 0 0 6px #d6b47788; }
+.foreground-preview-heading b { font-weight: 400; color: #9a9d8d; letter-spacing: 0; }
+.foreground-preview button { font: inherit; border: 0; border-radius: 0; cursor: pointer; color: inherit; background: transparent; }
+.foreground-preview button:focus-visible, .foreground-preview input:focus-visible { outline: 2px solid #e4ba71; outline-offset: 3px; }
+.foreground-preview button:disabled { opacity: .35; cursor: wait; }
+#foreground-preview-body { padding: 12px; }
+.foreground-preview-choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.foreground-preview-choices button { padding: 8px; text-align: left; border: 1px solid #3f443b; }
+.foreground-preview-choices span { margin-right: 10px; opacity: .45; font-size: 10px; }
+.foreground-preview-choices button[aria-pressed="true"] { color: #101410; background: #d9bc86; border-color: #d9bc86; }
+.foreground-preview-choices button:hover { border-color: #d9bc86; }
+.foreground-preview p { color: #aaa99b; min-height: 32px; margin: 12px 0; font-size: 11px; }
+.foreground-preview-position > span { display: flex; justify-content: space-between; color: #9a9d8d; }
+.foreground-preview-shapes { border: 0; margin: 0 0 14px; padding: 0; }
+.foreground-preview-shapes legend { padding: 0; margin: 0 0 7px; color: #9a9d8d; }
+.foreground-preview-shapes > div { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.foreground-preview-shapes button { padding: 7px 0; border: 1px solid #3f443b; font-size: 10px; }
+.foreground-preview-shapes svg { display: block; width: 23px; height: 23px; margin: 0 auto 5px; fill: none; stroke: currentColor; stroke-width: .11; stroke-linejoin: round; }
+.foreground-preview-shapes button[aria-pressed="true"] { border-color: #d9bc86; color: #e8c893; background: #d9bc8617; }
+.foreground-preview-shapes button:hover { border-color: #d9bc86; }
+.foreground-preview-position output { color: #e1c491; }
+.foreground-preview-position input { display: block; width: 100%; height: 18px; margin: 7px 0; accent-color: #d9bc86; cursor: ew-resize; touch-action: none; }
+.foreground-preview-actions { display: flex; gap: 5px; }
+.foreground-preview-actions button { padding: 5px 7px; border: 1px solid #3f443b; }
+.foreground-preview-actions button:last-child { margin-left: auto; }
+.foreground-preview[data-collapsed="true"] { width: 250px; }
+@media (max-width: 699px) {
+  .foreground-preview { top: max(12px, env(safe-area-inset-top)); right: 12px; width: min(300px, calc(100vw - 24px)); }
+  .foreground-preview-heading { padding: 7px 10px; }
+  #foreground-preview-body { padding: 9px; }
+  .foreground-preview p { margin: 9px 0; }
+}

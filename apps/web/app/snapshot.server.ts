@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { EMPTY_SNAPSHOT, type ReleaseSnapshot } from "@hadesd/contracts";
+import { normalizeSiteOrigin } from "@hadesd/contracts/site-origin";
+export const siteOrigin = normalizeSiteOrigin(process.env.SITE_ORIGIN);
 const file = process.env.HADESD_SNAPSHOT;
 if (file && !isAbsolute(file))
   throw new Error("HADESD_SNAPSHOT must be absolute");

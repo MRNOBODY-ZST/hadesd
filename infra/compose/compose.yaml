@@ -60,7 +60,7 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
-      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-hades}
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
       ADMIN_BOOTSTRAP_PASSWORD_FILE: /run/secrets/admin-password
     volumes:
       - ${RELEASE_ROOT:?run setup}:/srv/published:ro
@@ -85,7 +85,7 @@ services:
       API_ORIGIN: http://backend:8080
       WORKER_TOKEN: ${WORKER_TOKEN:?required}
       RELEASE_ROOT: /srv/published
-      SITE_ORIGIN: ${SITE_ORIGIN:-https://hadesd.sh}
+      SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:18088}
       WORKER_POLL_MS: 3000
     volumes: ["${RELEASE_ROOT:?run setup}:/srv/published"]
     networks: [private]

@@ -13,7 +13,7 @@ const schemas={
  CreateContent:object({...rev,type:types},['type',...required]),
  SaveRevision:object({...rev,version:{type:'integer',minimum:1}},['version',...required]),
  PublicContent:object({...rev,id,type:types,revisionId:id,route:str,publishedAt:date,updatedAt:date},['id','type','revisionId','route','publishedAt','updatedAt',...required]),
- SiteSettings:object({title:str,tagline:str,introduction:str,homeText:str,navigation:arr(object({label:str,href:str})),links:arr(object({label:str,url:{type:'string',format:'uri'},description:str},['label','url']))}),
+ SiteSettings:object({title:str,tagline:str,introduction:str,homeText:str,navigation:arr(object({label:str,href:str})),links:arr(object({label:str,url:{type:'string',format:'uri'},description:str},['label','url'])),heroTitle:{type:['string','null'],maxLength:120}},['title','tagline','introduction','homeText','navigation','links']),
  ReleaseInfo:object({state:{type:'string',enum:['EMPTY','ACTIVE']},releaseId:{type:['string','null']},createdAt:{type:['string','null']}},['state','releaseId']),
  ReleaseSnapshot:object({releaseId:id,createdAt:date,site:ref('SiteSettings'),contents:arr(ref('PublicContent'))}),
  PublishRequest:object({operation:{type:'string',enum:['PUBLISH','WITHDRAW','ROLLBACK','INITIALIZE','SETTINGS']},contentId:id,revisionId:id,releaseId:id},['operation']),

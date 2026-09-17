@@ -90,6 +90,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  window.history.replaceState(null, "", "/");
   stylesheet.remove();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -148,6 +149,57 @@ async function toHero() {
 function travelForward() {
   for (let step = 0; step < 9; step++) fireEvent.keyDown(window, { key: "PageDown" });
 }
+
+it("switches hollow portal silhouettes without resetting progress or the live terminal", async () => {
+  window.history.replaceState(null, "", "/?effects=circuit&shape=star");
+  const stage = await start();
+  await toHero();
+  await advanceTime(1000);
+  fireEvent.click(screen.getByRole("button", { name: "靠近" }));
+  const frame = graphicsMock.readFrame!();
+  expect(frame.journey).toBe(.84);
+  expect(stage.getAttribute("data-reveal-step")).toBe("7");
+  for (const [label, shape] of [["四芒星", "spark"], ["菱形", "diamond"], ["六边形", "hexagon"], ["圆环", "ring"], ["五角星", "star"]]) {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(stage.getAttribute("data-portal-shape")).toBe(shape);
+    expect(new URLSearchParams(window.location.search).get("shape")).toBe(shape);
+    expect(graphicsMock.readFrame!().journey).toBe(frame.journey);
+    expect(stage.getAttribute("data-reveal-step")).toBe("7");
+    expect(stage.getAttribute("data-stage-ready")).toBe("false");
+  }
+});
+
+it("keeps the comparison controls local to an explicit preview URL", async () => {
+  await start();
+  expect(screen.queryByLabelText("滚筒效果本地预览")).toBeNull();
+});
+
+it("compares all four foregrounds at the same scroll position and leaves range keyboard input alone", async () => {
+  window.history.replaceState(null, "", "/?effects=macos");
+  const stage = await start();
+  await toHero();
+  expect(stage.getAttribute("data-intro-phase")).toBe("journey");
+  expect(graphicsMock.readFrame!().journey).toBe(.55);
+  for (const [name, mode] of [["芯片装配", "assembly"], ["信号穿屏", "circuit"], ["打印纸带", "paper"], ["Mac 窗口", "macos"]]) {
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(name!) }));
+    expect(stage.getAttribute("data-foreground-effect")).toBe(mode);
+    expect(graphicsMock.readFrame!().journey).toBe(.55);
+    expect(new URLSearchParams(window.location.search).get("effects")).toBe(mode);
+  }
+  const slider = screen.getByRole("slider", { name: "滚动位置" });
+  expect(fireEvent.keyDown(slider, { key: "ArrowRight" })).toBe(true);
+  await advanceTime(200);
+  expect(graphicsMock.readFrame!().journey).toBe(.55);
+  fireEvent.change(slider, { target: { value: "36" } });
+  expect(graphicsMock.readFrame!().journey).toBe(.36);
+  fireEvent.click(screen.getByRole("button", { name: "收束" }));
+  expect(graphicsMock.readFrame!().journey).toBe(.77);
+  fireEvent.click(screen.getByRole("button", { name: /重播开场/ }));
+  expect(stage.getAttribute("data-intro-phase")).toBe("boot");
+  await toHero();
+  expect(stage.getAttribute("data-intro-phase")).toBe("hero");
+  expect(graphicsMock.readFrame!().journey).toBe(0);
+});
 async function toReveal(stage: Element) {
   await toHero();
   travelForward();
@@ -158,6 +210,126 @@ async function toReveal(stage: Element) {
   await advanceTime(PENETRATE_DURATION_MS + 50);
   expect(stage.getAttribute("data-intro-phase")).toBe("reveal");
 }
+
+it("prepares the live signal portal in hidden inert content and resets its reveal on rewind or mode change", async () => {
+  window.history.replaceState(null, "", "/?effects=circuit");
+  const stage = await start();
+  await toHero();
+  const slider = screen.getByRole("slider", { name: "滚动位置" });
+  const surface = stage.querySelector(".stage-content")!;
+  fireEvent.change(slider, { target: { value: "40" } });
+  fireEvent.change(slider, { target: { value: "55" } });
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await advanceTime(300);
+  expect(stage.getAttribute("data-reveal-step")).toBe("3");
+  expect(screen.getByTestId("gpu-scene").getAttribute("data-reveal")).toBe("3");
+  expect(stage.getAttribute("data-intro-phase")).toBe("journey");
+  expect(surface.hasAttribute("inert")).toBe(true);
+  expect(getComputedStyle(surface).opacity).toBe("0");
+  expect(stage.querySelector("[data-native-image-layer]")).toBeNull();
+  await advanceTime(2000);
+  expect(stage.getAttribute("data-reveal-step")).toBe("7");
+  expect(stage.getAttribute("data-stage-ready")).toBe("false");
+  expect(graphicsMock.readFrame!().journey).toBe(.55);
+  fireEvent.change(slider, { target: { value: "51" } });
+  expect(stage.getAttribute("data-reveal-step")).toBe("7");
+  fireEvent.change(slider, { target: { value: "49" } });
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await advanceTime(1000);
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  fireEvent.change(slider, { target: { value: "55" } });
+  await advanceTime(300);
+  expect(stage.getAttribute("data-reveal-step")).toBe("3");
+  fireEvent.click(screen.getByRole("button", { name: /Mac 窗口/ }));
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await advanceTime(1000);
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  fireEvent.click(screen.getByRole("button", { name: /信号/ }));
+  await advanceTime(120);
+  expect(stage.getAttribute("data-reveal-step")).toBe("1");
+  fireEvent.click(screen.getByRole("button", { name: /重播开场/ }));
+  expect(stage.getAttribute("data-intro-phase")).toBe("boot");
+  expect(stage.getAttribute("data-boot-progress")).toBe("0");
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await toHero();
+  expect(stage.getAttribute("data-intro-phase")).toBe("hero");
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+});
+
+it("carries a partially revealed terminal through the signal aperture without a DOS stage or reveal reset", async () => {
+  window.history.replaceState(null, "", "/?effects=circuit");
+  const stage = await start();
+  await toHero();
+  const slider = screen.getByRole("slider", { name: "滚动位置" });
+  fireEvent.change(slider, { target: { value: "40" } });
+  fireEvent.change(slider, { target: { value: "55" } });
+  await advanceTime(300);
+  expect(stage.getAttribute("data-reveal-step")).toBe("3");
+  fireEvent.change(slider, { target: { value: "100" } });
+  expect(stage.getAttribute("data-intro-phase")).toBe("reveal");
+  expect(stage.getAttribute("data-reveal-step")).toBe("3");
+  expect(stage.querySelector(".stage-content")!.hasAttribute("inert")).toBe(true);
+  await advanceTime(100);
+  expect(stage.getAttribute("data-reveal-step")).toBe("4");
+  await advanceTime(400);
+  expect(stage.getAttribute("data-intro-phase")).toBe("terminal");
+  expect(stage.getAttribute("data-reveal-step")).toBe("7");
+  expect(stage.querySelector(".stage-content")!.hasAttribute("inert")).toBe(false);
+  expect(fireEvent.wheel(window, { deltaY: -120 })).toBe(true);
+});
+
+it("finishes the scroll-driven signal flight without revisiting resume or penetrate", async () => {
+  window.history.replaceState(null, "", "/?effects=circuit");
+  const stage = await start();
+  await toHero();
+  const phases: string[] = [];
+  const steps: number[] = [];
+  const observer = new MutationObserver(() => {
+    phases.push(stage.getAttribute("data-intro-phase")!);
+    steps.push(Number(stage.getAttribute("data-reveal-step")));
+  });
+  observer.observe(stage, { attributes: true, attributeFilter: ["data-intro-phase", "data-reveal-step"] });
+  await advanceTime(1000);
+  expect(stage.getAttribute("data-reveal-step")).toBe("7");
+  travelForward();
+  await untilPhase(stage, "terminal");
+  expect(phases).toContain("reveal");
+  expect(phases).not.toContain("resume");
+  expect(phases).not.toContain("penetrate");
+  const firstComplete = steps.indexOf(7);
+  expect(firstComplete).toBeGreaterThanOrEqual(0);
+  expect(steps.slice(firstComplete).every(step => step === 7)).toBe(true);
+  expect(stage.getAttribute("data-stage-ready")).toBe("true");
+  observer.disconnect();
+});
+
+it("replaces pending reveal clocks on rapid mode changes and cancels them when replaying boot", async () => {
+  window.history.replaceState(null, "", "/?effects=circuit");
+  const stage = await start();
+  await toHero();
+  const slider = screen.getByRole("slider", { name: "滚动位置" });
+  fireEvent.change(slider, { target: { value: "0" } });
+  fireEvent.change(slider, { target: { value: "100" } });
+  expect(stage.getAttribute("data-intro-phase")).toBe("reveal");
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await advanceTime(300);
+  expect(stage.getAttribute("data-reveal-step")).toBe("3");
+  fireEvent.click(screen.getByRole("button", { name: /Mac 窗口/ }));
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await advanceTime(110);
+  expect(stage.getAttribute("data-reveal-step")).toBe("1");
+  fireEvent.click(screen.getByRole("button", { name: /信号穿屏/ }));
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await advanceTime(110);
+  expect(stage.getAttribute("data-reveal-step")).toBe("1");
+  fireEvent.click(screen.getByRole("button", { name: /重播开场/ }));
+  expect(stage.getAttribute("data-intro-phase")).toBe("boot");
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+  await advanceTime(1000);
+  expect(stage.getAttribute("data-intro-phase")).toBe("boot");
+  expect(stage.getAttribute("data-stage-ready")).toBe("false");
+  expect(stage.getAttribute("data-reveal-step")).toBe("0");
+});
 
 it("pauses DOS at 80%, pulls back before enabling the hero, and waits for user travel", async () => {
   const stage = await start();
@@ -498,4 +670,12 @@ it("does not reuse an old success flag when a renewed renderer hangs, restoring 
   expect(stage.getAttribute("data-reveal-step")).toBe("7");
   expect(screen.queryByTestId("gpu-scene")).toBeNull();
   expect(getComputedStyle(screen.getByTestId("reveal-7")).visibility).toBe("visible");
+});
+
+it("renders the published site identity and a configurable multiline introduction", async () => {
+  render(<TerminalStage theme="amber" level="full" siteTitle="林间笔记" heroTitle={"记录日常，\n分享发现。"}><Content /></TerminalStage>);
+  await toHero();
+  expect(screen.getByRole("heading", { name: "记录日常，分享发现。" })).toBeTruthy();
+  expect(document.querySelector(".stage-masthead")?.textContent).toBe("林间笔记");
+  expect(document.querySelectorAll(".stage-hero-line")).toHaveLength(2);
 });

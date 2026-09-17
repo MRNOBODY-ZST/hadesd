@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import { Canvas, useFrame, useThree, type GLProps } from "@react-three/fiber";
 import {
   CanvasTexture, Color, DirectionalLight, Group, LinearFilter, MathUtils, Mesh, MeshBasicMaterial, MeshBasicNodeMaterial, NoToneMapping,
@@ -9,7 +9,7 @@ import type { WebGLRenderer } from "three";
 import { createAsciiFace } from "./asciiFace";
 import { AsciiCarousel } from "./AsciiCarousel";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { Fn, abs, cos, float, fract, length, mix, pass, positionLocal, sin, smoothstep, step, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, abs, cos, float, fract, length, mix, pass, positionLocal, screenUV, sin, smoothstep, step, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import type { CrtLevel, Theme } from "@hadesd/contracts";
 import type { IntroPhase } from "../timeline";
@@ -24,12 +24,19 @@ import { computerGroundHeight, computerLens } from "./computerPlacement";
 import { sceneMotion, scenePixelRatio } from "./sceneMotion";
 import { takeFiberClock } from "./fiberRendererClock";
 import { shouldSubmitFrame } from "./frameSubmission";
+import type { ForegroundMode } from "./foreground/shared";
+import { SIGNAL_PORTAL } from "./foreground/signalPortalMotion";
+import type { PortalShape } from "./foreground/portalShapes";
+
+const ForegroundEffects = import.meta.env.DEV ? lazy(() => import("./foreground/ForegroundEffects")) : null;
 
 type Props = {
   surface: HTMLElement; theme: Theme; level: CrtLevel; ready: boolean; phase: IntroPhase;
   bootProgress: MutableRefObject<number>; progress: MutableRefObject<number>;
   phaseState: MutableRefObject<IntroPhase>; phaseProgress: MutableRefObject<number>; revealStep: number;
   pointer: MutableRefObject<{ x: number; y: number }>; reducedMotion: boolean;
+  foregroundMode?: ForegroundMode;
+  portalShape?: PortalShape;
   onInitialized: (backend: string) => void; onFailure: () => void;
 };
 type RendererStats = {
@@ -38,13 +45,17 @@ type RendererStats = {
   introPhase: IntroPhase; journey: number; phaseProgress: number; bootProgress: number; revealStep: number; asciiActive: boolean; asciiTilesVisible: boolean; hardwareVisible: boolean; visibleHardwareCount: number; binaryStreamsVisible: boolean; visibleBinaryStreamCount: number; macVisible: boolean;
   bootScreenVisible: boolean; bootScreenZ: number; bootScreenAlpha: number;
   bootSequence: number; macPreset: number; macScreenSeconds: number;
+  foregroundEffect: ForegroundMode; visibleForegroundCount: number; foregroundPose: number[];
+  portalActive: boolean; portalCoversViewport: boolean; portalCrossedCamera: boolean; portalLeaderZ: number; terminalUnderlay: boolean;
+  carouselRotation: number;
+  portalShape: PortalShape; portalRotation: number;
   drawCalls: number; triangles: number; points: number; lines: number; textures: number; geometries: number; renderCpuMs: number; dpr: number; frameRateTarget: number; reflection: boolean; fiberClockOwned: boolean;
 };
 type FiberRendererParameters = Parameters<Extract<GLProps, (...args: never[]) => unknown>>[0];
 declare global { interface Window { __hadesdGraphics?: RendererStats } }
 const ease = (start: number, end: number, value: number) => MathUtils.smoothstep(value, start, end);
 
-function Display({ surface, theme, level, phaseState, bootProgress, progress, phaseProgress, revealStep, pointer, reducedMotion, onInitialized, onFailure }: Props) {
+function Display({ surface, theme, level, phaseState, bootProgress, progress, phaseProgress, revealStep, pointer, reducedMotion, foregroundMode = "binary", portalShape = "star", onInitialized, onFailure }: Props) {
   const { gl: fiberRenderer, scene, camera, size, invalidate, setDpr } = useThree();
   const viewport = useMemo(() => { const height = 2 * Math.tan(22 * Math.PI / 180) * 11; return { width: height * size.width / size.height, height }; }, [size.width, size.height]);
   const renderer = fiberRenderer as unknown as WebGPURenderer;
@@ -72,6 +83,8 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
   const computerGround = useRef({ x: 0, z: 0, scale: 1, yaw: 0 });
   const cursor = useMemo(() => uniform(new Vector4(-2, -2, 0, 0)), []);
   const intensity = useMemo(() => uniform(1), []), terminalAlpha = useMemo(() => uniform(0), []);
+  const portalAlignment = useMemo(() => uniform(0), []), portalInk = useMemo(() => uniform(0), []);
+  const portalFit = useMemo(() => uniform(new Vector2(1, 1)), []);
   const tint = useMemo(() => uniform(new Color("#b9955b")), []);
   const monitor = useRef<Mesh>(null), monitorBack = useRef<Mesh>(null), mac = useRef<Group>(null);
   const bootScreen = useRef<Mesh>(null);
@@ -93,14 +106,15 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
     return { map, target, copy, geometry, sourceScene, sourceCamera, boot: createBootTexture(), desktop: createMacScreenTexture() };
   }, []);
 
-  const material = useMemo(() => {
-    const m = new MeshBasicNodeMaterial(); m.name = "HADESD / live terminal phosphor"; m.transparent = true;
-    m.colorNode = Fn(() => {
-      const q = uv().sub(.5);
+  const { material, portalMaterial } = useMemo(() => {
+    // Both the window through the ring and the final screen use exactly the
+    // same live text signal. No screenshot or duplicate terminal can jump at entry.
+    const sample = (glassUv: Node<"vec2">) => Fn(() => {
+      const q = glassUv.sub(.5);
       // Keep terminal glyphs registered to their native DOM hit targets. The
       // lens rim, scan, highlight and phosphor live on the larger glass plane.
-      const sourceUv = uv().sub(contentRect.xy).div(contentRect.zw);
-      const distance = length(uv().sub(mouse.mul(.5).add(.5)));
+      const sourceUv = glassUv.sub(contentRect.xy).div(contentRect.zw);
+      const distance = length(glassUv.sub(mouse.mul(.5).add(.5)));
       const touch = sin(distance.mul(43).sub(clock.mul(2.4))).mul(float(1).sub(smoothstep(0, .4, distance))).mul(.0007).mul(intensity);
       const coord = sourceUv.add(vec2(touch, touch.mul(.45)));
       const split = vec2(float(.00012).add(abs(q.x).mul(.0007)).mul(intensity), 0);
@@ -108,16 +122,28 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
       const scan = sin(coord.y.mul(pixels.y).mul(Math.PI)).mul(.08).mul(intensity).add(float(1).sub(intensity.mul(.065)));
       const mask = sin(coord.x.mul(pixels.x).mul(2.094)).mul(.021).mul(intensity).add(.979);
       const vignette = float(1).sub(smoothstep(.23, .76, length(q)).mul(.22));
-      const inside = crtAperture(uv());
+      const inside = crtAperture(glassUv);
       const contentInside = step(0, coord.x).mul(step(coord.x, 1)).mul(step(0, coord.y)).mul(step(coord.y, 1));
       const cursorArea = step(cursor.x, coord.x).mul(step(coord.x, cursor.x.add(cursor.z))).mul(step(cursor.y, coord.y)).mul(step(coord.y, cursor.y.add(cursor.w)));
       const blink = step(0, sin(clock.mul(5.5)));
       const illumination = float(1).add(float(1).sub(smoothstep(0, .32, distance)).mul(.12).mul(intensity));
       const content = mix(rgb, vec3(.003, .005, .004), cursorArea.mul(blink)).mul(scan).mul(mask).mul(vignette).mul(illumination);
       const sweep = float(1).sub(smoothstep(.002, .012, abs(coord.y.sub(fract(clock.mul(.052)))))).mul(.016).mul(intensity);
-      return vec4(content.mul(contentInside).add(tint.mul(sweep)).mul(inside), inside.mul(terminalAlpha));
-    })(); return m;
-  }, [resources, clock, mouse, intensity, pixels, cursor, tint, terminalAlpha, contentRect]);
+      return vec4(content.mul(contentInside).add(tint.mul(sweep)).mul(inside), inside);
+    })();
+    const material = new MeshBasicNodeMaterial();
+    material.name = "HADESD / live terminal phosphor"; material.transparent = true;
+    const screen = sample(uv());
+    material.colorNode = vec4(screen.rgb, screen.a.mul(terminalAlpha));
+    const portalMaterial = new MeshBasicNodeMaterial();
+    portalMaterial.name = "signal aperture / live terminal beyond the ring";
+    portalMaterial.transparent = true;
+    const local = uv().sub(.5).mul(portalFit).add(.5);
+    // screenUV is top-left on both backends; our glass texture uses bottom-left UVs.
+    const portal = sample(mix(local, vec2(screenUV.x, screenUV.y.oneMinus()), portalAlignment));
+    portalMaterial.colorNode = vec4(portal.rgb, portalInk);
+    return { material, portalMaterial };
+  }, [resources, clock, mouse, intensity, pixels, cursor, tint, terminalAlpha, contentRect, portalAlignment, portalInk, portalFit]);
 
   const bootMaterial = useMemo(() => {
     const m = new MeshBasicNodeMaterial(); m.transparent = true; m.name = "DOS / curved boot phosphor";
@@ -188,6 +214,7 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
       monitorBack.current?.scale.set(viewport.width * .995, viewport.height * .97, .2); monitorBack.current?.position.set(0, 0, -.16);
       bootScreen.current?.scale.set(viewport.width, viewport.height, 1);
       const aspect = size.width / size.height;
+      portalFit.value.set(Math.max(1, 1 / aspect), Math.max(1, aspect));
       bootArtScale.value.set(Math.max(1, aspect / 1.6), Math.max(1, 1.6 / aspect));
       face.uniforms.aspect.value = size.width / size.height;
       // Skyworks uses a 20-physical-pixel square character cell. Retain enough
@@ -197,7 +224,7 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
       invalidate();
     };
     measure(); const observer = new ResizeObserver(measure); observer.observe(surface); return () => observer.disconnect();
-  }, [surface, renderer, size, viewport, face, invalidate, bootArtScale, contentRect]);
+  }, [surface, renderer, size, viewport, face, invalidate, bootArtScale, contentRect, portalFit]);
   useEffect(() => {
     intensity.value = level === "full" ? 1 : .38; tint.value.set(theme === "green" ? "#8edcae" : "#e1b16d");
     const move = () => invalidate(); window.addEventListener("pointermove", move, { passive: true });
@@ -212,9 +239,9 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
   useEffect(() => () => {
     resources.map.dispose(); resources.target.dispose(); resources.copy.dispose(); resources.geometry.dispose();
     resources.boot.dispose(); resources.desktop.dispose(); face.dispose();
-    for (const m of [material, bootMaterial, macMaterial, caseMaterial]) m.dispose();
+    for (const m of [material, portalMaterial, bootMaterial, macMaterial, caseMaterial]) m.dispose();
     pipeline.render.dispose(); pipeline.scenePass.dispose(); pipeline.glow.dispose(); delete window.__hadesdGraphics;
-  }, [resources, material, bootMaterial, macMaterial, caseMaterial, pipeline, face]);
+  }, [resources, material, portalMaterial, bootMaterial, macMaterial, caseMaterial, pipeline, face]);
 
   useFrame(({ clock: frameClock }) => {
     // React may commit after the next GPU frame. Read the phase and its progress
@@ -223,6 +250,7 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
     const elapsed = frameClock.elapsedTime;
     clock.value = reducedMotion ? 1 : elapsed;
     const p = progress.current, phaseP = phaseProgress.current;
+    const portalActive = import.meta.env.DEV && foregroundMode === "circuit" && phase === "journey";
     const rolling = MathUtils.smootherstep(p, MAC_SCREEN_HANDOFF, 1);
     const motion = sceneMotion(phase, phaseP, p);
     burst.value = reducedMotion ? 0 : motion.burst;
@@ -242,7 +270,9 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
     camera.position.set(0, (size.width < 700 ? 1.05 : 1.25) * presentation,
       lens.distance + (phase === "journey" ? Math.sin(rolling * Math.PI) * 16.5 : 0));
     camera.lookAt(0, 0, 0);
-    terminalAlpha.value = motion.terminalAlpha;
+    terminalAlpha.value = portalActive ? ease(.82, .94, p) : motion.terminalAlpha;
+    portalAlignment.value = ease(.82, .94, p);
+    portalInk.value = ease(.48, .55, p);
     floorOpacity.current = motion.worldAlpha;
     caseMaterial.opacity = terminalAlpha.value;
     if (keyLight.current) keyLight.current.intensity = 2.3 + (phase === "journey" ? .4 * ease(0, .18, p) : 0);
@@ -253,8 +283,15 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
       bootScreen.current.scale.set(viewport.width, viewport.height, 1);
       bootScreen.current.rotation.y = 0;
     }
-    if (monitor.current) monitor.current.visible = terminalAlpha.value > 0;
-    if (monitorBack.current) monitorBack.current.visible = terminalAlpha.value > 0;
+    const terminalUnderlay = portalActive && p >= SIGNAL_PORTAL.fillsViewportAt;
+    if (monitor.current) {
+      monitor.current.visible = terminalUnderlay || motion.terminalAlpha > 0;
+      monitor.current.position.z = terminalUnderlay ? camera.position.z - 11 : 0;
+    }
+    if (monitorBack.current) {
+      monitorBack.current.visible = terminalUnderlay || motion.terminalAlpha > 0;
+      monitorBack.current.position.z = (terminalUnderlay ? camera.position.z - 11 : 0) - .16;
+    }
     resources.boot.paint(bootProgress.current, phase, phaseP);
     resources.desktop.update(elapsed, !reducedMotion && (phase === "pullback" || phase === "hero"));
     if (mac.current) {
@@ -316,16 +353,43 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
         window.__hadesdGraphics = { backend, frames: 0, renderTargets: 2, tsl: true, textTexture: true, width: size.width, height: size.height, textureWidth: resources.target.width, textureHeight: resources.target.height,
           introPhase: phase, journey: p, phaseProgress: phaseP, bootProgress: bootProgress.current, revealStep, asciiActive: false, asciiTilesVisible: false, hardwareVisible: false, visibleHardwareCount: 0, binaryStreamsVisible: false, visibleBinaryStreamCount: 0, macVisible: false,
           bootScreenVisible: false, bootScreenZ: 0, bootScreenAlpha: 0, bootSequence: resources.boot.sequence.value, macPreset: 0, macScreenSeconds: 0,
+          foregroundEffect: foregroundMode, visibleForegroundCount: 0, foregroundPose: [],
+          portalActive: false, portalCoversViewport: false, portalCrossedCamera: false, portalLeaderZ: -20, terminalUnderlay: false,
+          carouselRotation: 0,
+          portalShape, portalRotation: 0,
           drawCalls: 0, triangles: 0, points: 0, lines: 0, textures: 0, geometries: 0, renderCpuMs: 0, dpr: 1, frameRateTarget, reflection: true, fiberClockOwned: fiberClock.owned };
       }
       if (window.__hadesdGraphics) {
         const hardware = scene.getObjectByName("hardware-components-field");
+        const foreground = import.meta.env.DEV ? scene.getObjectByName(`foreground-${foregroundMode}`) : undefined;
+        const foregroundPose: number[] = [];
+        if (foreground?.visible) foreground.traverse(object => {
+          foregroundPose.push(...object.position.toArray(), ...object.quaternion.toArray(), ...object.scale.toArray());
+          if (object instanceof Mesh) {
+            const positions = object.geometry.getAttribute("position");
+            if (positions) for (const index of [0, Math.floor(positions.count / 2), positions.count - 1]) {
+              foregroundPose.push(positions.getX(index), positions.getY(index), positions.getZ(index));
+            }
+            const materials = Array.isArray(object.material) ? object.material : [object.material];
+            materials.forEach(material => {
+              if ("map" in material && material.map instanceof CanvasTexture) foregroundPose.push(...material.map.offset.toArray());
+            });
+          }
+        });
         Object.assign(window.__hadesdGraphics, { introPhase: phase, journey: p, phaseProgress: phaseP, bootProgress: bootProgress.current, revealStep, asciiActive: phase === "journey" && p > .20,
           asciiTilesVisible: !!scene.getObjectByName("ascii-screen-carousel")?.visible,
           bootScreenVisible: !!bootScreen.current?.visible, bootScreenZ: bootScreen.current?.position.z ?? 0, bootScreenAlpha: cardAlpha.value,
           bootSequence: resources.boot.sequence.value, macPreset: resources.desktop.uniforms.preset.value, macScreenSeconds: resources.desktop.uniforms.seconds.value,
           hardwareVisible: false, visibleHardwareCount: 0,
           binaryStreamsVisible: !!hardware?.visible, visibleBinaryStreamCount: hardware?.visible ? Number(hardware.userData.visibleStreamCount || 0) : 0,
+          foregroundEffect: foregroundMode, visibleForegroundCount: foreground?.visible ? Number(foreground.userData.itemCount || 0) : 0, foregroundPose,
+          portalActive: foregroundMode === "circuit" && phase === "journey",
+          portalCoversViewport: Boolean(foreground?.userData.apertureCoversViewport),
+          portalCrossedCamera: Boolean(foreground?.userData.crossedCamera),
+          portalLeaderZ: Number(foreground?.userData.leaderZ ?? -20),
+          carouselRotation: Number(scene.getObjectByName("ascii-screen-carousel")?.userData.scrollRotation ?? 0),
+          portalShape, portalRotation: Number(foreground?.userData.leaderRotation ?? 0),
+          terminalUnderlay: foregroundMode === "circuit" && phase === "journey" && p >= SIGNAL_PORTAL.fillsViewportAt,
           drawCalls: renderer.info.render.drawCalls, triangles: renderer.info.render.triangles, points: renderer.info.render.points, lines: renderer.info.render.lines,
           textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, renderCpuMs: performance.now() - started, dpr: renderer.getPixelRatio(), frameRateTarget,
           macVisible: !!mac.current?.visible, width: size.width, height: size.height, textureWidth: resources.target.width, textureHeight: resources.target.height });
@@ -347,8 +411,10 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
     <pointLight position={[4, 1, 6]} intensity={8} color="#e0cab8" distance={18} />
     <group ref={mac} visible={false}><RetroMac screenMaterial={macMaterial} /></group>
     <mesh ref={bootScreen} visible={false}><planeGeometry args={[1, 1]} /><primitive object={bootMaterial} attach="material" /></mesh>
-    <AsciiCarousel width={viewport.width} height={viewport.height} face={face} bootMaterial={bootMaterial} progress={progress} phaseState={phaseState} />
-    <HardwareField progress={hardwareProgress} pointer={pointer} reducedMotion={reducedMotion} />
+    <AsciiCarousel width={viewport.width} height={viewport.height} face={face} bootMaterial={bootMaterial} progress={progress} phaseState={phaseState} terminalPortal={import.meta.env.DEV && foregroundMode === "circuit"} />
+    {ForegroundEffects && foregroundMode !== "binary"
+      ? <Suspense fallback={null}><ForegroundEffects mode={foregroundMode} progress={hardwareProgress} pointer={pointer} reducedMotion={reducedMotion} portalMaterial={portalMaterial} portalShape={portalShape} /></Suspense>
+      : <HardwareField progress={hardwareProgress} pointer={pointer} reducedMotion={reducedMotion} />}
     <mesh ref={monitorBack} geometry={caseGeometry} material={caseMaterial} visible={false} />
     <mesh ref={monitor} visible={false}><planeGeometry args={[1, 1, 24, 16]} /><primitive object={material} attach="material" /></mesh>
   </>;

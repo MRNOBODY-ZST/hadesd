@@ -30,6 +30,8 @@ import {
 } from "./timeline";
 import "./TerminalStage.css";
 import { NativeImageLayer } from "./NativeImageLayer";
+import { ForegroundPreview, previewModeFromSearch, type PreviewMode } from "./ForegroundPreview";
+import { portalShapeFromSearch, type PortalShape } from "./three/foreground/portalShapes";
 
 const Scene = lazy(() => import("./three/TerminalScene"));
 class GraphicsBoundary extends Component<
@@ -52,11 +54,16 @@ export function TerminalStage({
   children,
   theme,
   level,
+  siteTitle = "HADESD",
+  heroTitle,
 }: {
   children: ReactNode;
   theme: Theme;
   level: CrtLevel;
+  siteTitle?: string;
+  heroTitle?: string | null;
 }) {
+  const heroLines = (heroTitle?.trim() || "让想象，\n接通现实。").split(/\r?\n/u).filter(Boolean);
   const [mounted, setMounted] = useState(false);
   const [surface, setSurface] = useState<HTMLDivElement | null>(null);
   const [renderer, setRenderer] = useState("initializing");
@@ -68,6 +75,11 @@ export function TerminalStage({
   const [revealStep, setRevealStep] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [epoch, setEpoch] = useState(0);
+  const [previewMode, setPreviewMode] = useState<PreviewMode | null>(null);
+  const [portalShape, setPortalShape] = useState<PortalShape>("star");
+  const previewStarted = useRef(false);
+  const signalPortal = useRef(false);
+  const portalRevealStarted = useRef<number | null>(null);
   const phaseRef = useRef<IntroPhase>("boot");
   const bootProgress = useRef(0);
   const phaseProgress = useRef(0);
@@ -87,12 +99,33 @@ export function TerminalStage({
     phaseProgress.current = 0;
     setPhasePercent(0);
     if (next === "reveal") {
-      revealSchedule.current = createRevealSchedule();
-      setRevealStep(0);
+      // The portal already displays this live surface. Keep its revealed groups
+      // and clock when the camera passes through, without a second black frame.
+      if (!signalPortal.current || portalRevealStarted.current === null) {
+        revealSchedule.current = createRevealSchedule();
+        setRevealStep(0);
+        if (signalPortal.current) portalRevealStarted.current = performance.now();
+      }
     }
     phaseRef.current = next;
     setPhase(next);
   }, []);
+  const resetPortalReveal = useCallback(() => {
+    if (portalRevealStarted.current === null) return;
+    portalRevealStarted.current = null;
+    revealSchedule.current = [];
+    if (phaseRef.current !== "terminal") setRevealStep(0);
+  }, []);
+  const updatePortalReveal = useCallback((journey: number, now: number) => {
+    if (!signalPortal.current) return;
+    if (journey < .5) {
+      resetPortalReveal();
+    } else if (journey >= .52 && portalRevealStarted.current === null) {
+      portalRevealStarted.current = now;
+      revealSchedule.current = createRevealSchedule();
+      setRevealStep(0);
+    }
+  }, [resetPortalReveal]);
   const finish = useCallback(() => {
     if (animation.current !== null) cancelAnimationFrame(animation.current);
     animation.current = null;
@@ -141,13 +174,14 @@ export function TerminalStage({
       previous = now;
       progress.current = next;
       setPercent(Math.floor(next * 100));
-      changePhase(phaseForJourney(next));
+      updatePortalReveal(next, now);
+      changePhase(phaseForJourney(next, signalPortal.current));
       if (next === 1) return;
       if (next !== destination.current)
         animation.current = requestAnimationFrame(tick);
     };
     animation.current = requestAnimationFrame(tick);
-  }, [changePhase]);
+  }, [changePhase, updatePortalReveal]);
   const advance = useCallback(
     (delta: number) => {
       if (phaseRef.current !== "hero" && phaseRef.current !== "journey") return;
@@ -156,6 +190,74 @@ export function TerminalStage({
     },
     [animateJourney],
   );
+
+  const seekPreview = useCallback((value: number) => {
+    if (!import.meta.env.DEV || !initialized.current || failed || reducedMotion) return;
+    if (animation.current !== null) cancelAnimationFrame(animation.current);
+    animation.current = null;
+    const next = Math.min(signalPortal.current ? 1 : .98, clampProgress(value));
+    if (next < 1 && (phaseRef.current === "terminal" || phaseRef.current === "reveal")) resetPortalReveal();
+    destination.current = progress.current = next;
+    bootProgress.current = .8;
+    setBootPercent(80);
+    setPercent(Math.round(next * 1000) / 10);
+    updatePortalReveal(next, performance.now());
+    changePhase(phaseForJourney(next, signalPortal.current));
+  }, [changePhase, failed, reducedMotion, resetPortalReveal, updatePortalReveal]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      const mode = previewModeFromSearch(window.location.search);
+      signalPortal.current = mode === "circuit";
+      setPreviewMode(mode);
+      setPortalShape(portalShapeFromSearch(window.location.search));
+    }
+  }, []);
+  useEffect(() => {
+    if (previewMode && !previewStarted.current && phase === "hero" && renderer !== "initializing") {
+      previewStarted.current = true;
+      seekPreview(.55);
+    }
+  }, [previewMode, phase, renderer, seekPreview]);
+  const selectPreview = (mode: PreviewMode) => {
+    const changed = mode !== previewMode;
+    if (changed) resetPortalReveal();
+    signalPortal.current = mode === "circuit";
+    if (changed && phaseRef.current === "reveal") {
+      revealSchedule.current = createRevealSchedule();
+      setRevealStep(0);
+      if (signalPortal.current) portalRevealStarted.current = performance.now();
+      // Replace the outgoing mode's pending reveal RAF with a fresh clock.
+      setEpoch(value => value + 1);
+    }
+    setPreviewMode(mode);
+    const url = new URL(window.location.href);
+    url.searchParams.set("effects", mode);
+    window.history.replaceState(window.history.state, "", url);
+  };
+  const selectPortalShape = (shape: PortalShape) => {
+    setPortalShape(shape);
+    const url = new URL(window.location.href);
+    url.searchParams.set("shape", shape);
+    window.history.replaceState(window.history.state, "", url);
+  };
+
+  useEffect(() => {
+    if (!enabled || reducedMotion || renderer === "initializing" || previewMode !== "circuit" || (phase !== "hero" && phase !== "journey")) return;
+    let frame = 0;
+    const tick = (now: number) => {
+      if (!signalPortal.current || (phaseRef.current !== "hero" && phaseRef.current !== "journey")) return;
+      // Reveal timing is independent of scroll easing; only the portal's pose
+      // is scrubbed. Below the entry threshold it can start a fresh boot again.
+      updatePortalReveal(progress.current, now);
+      if (portalRevealStarted.current !== null) {
+        setRevealStep(revealStepAt(now - portalRevealStarted.current, revealSchedule.current));
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [enabled, reducedMotion, renderer, previewMode, phase, updatePortalReveal]);
 
   useEffect(() => {
     setMounted(true);
@@ -193,6 +295,7 @@ export function TerminalStage({
       progress.current = 0;
       bootProgress.current = 0;
       phaseProgress.current = 0;
+      portalRevealStarted.current = null;
       revealSchedule.current = [];
       setRevealStep(0);
       setPhasePercent(0);
@@ -219,10 +322,13 @@ export function TerminalStage({
       return;
     }
     if (!isTimedPhase(phase) || renderer === "initializing") return;
-    const started = performance.now();
+    const started = phase === "reveal" && signalPortal.current && portalRevealStarted.current !== null
+      ? portalRevealStarted.current
+      : performance.now();
     const duration = timedPhaseDuration(phase, revealSchedule.current);
     let frame = 0;
     const tick = (now: number) => {
+      if (phaseRef.current !== phase) return;
       const elapsed = now - started;
       const next = clampProgress(elapsed / duration);
       phaseProgress.current = next;
@@ -265,7 +371,9 @@ export function TerminalStage({
   }, [enabled, renderer, fail]);
 
   useEffect(() => {
+    const isPreviewControl = (target: EventTarget | null) => target instanceof Element && !!target.closest("[data-foreground-preview]");
     const wheel = (event: WheelEvent) => {
+      if (isPreviewControl(event.target)) return;
       if (phaseRef.current !== "hero" && phaseRef.current !== "journey") return;
       if (event.ctrlKey || event.metaKey) return;
       event.preventDefault();
@@ -275,7 +383,7 @@ export function TerminalStage({
     let previousTouch: number | null = null;
     const touchStart = (event: TouchEvent) => {
       previousTouch =
-        event.touches.length === 1 ? event.touches[0]!.clientY : null;
+        !isPreviewControl(event.target) && event.touches.length === 1 ? event.touches[0]!.clientY : null;
     };
     const touchMove = (event: TouchEvent) => {
       if (
@@ -294,6 +402,7 @@ export function TerminalStage({
       previousTouch = null;
     };
     const keyboard = (event: KeyboardEvent) => {
+      if (isPreviewControl(event.target)) return;
       if (phaseRef.current === "terminal" || event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -356,12 +465,14 @@ export function TerminalStage({
       data-renderer={activeRenderer}
       data-graphics={enabled && renderer !== "initializing" ? "true" : "false"}
       data-stage-theme={theme}
+      data-foreground-effect={previewMode ?? "binary"}
+      data-portal-shape={previewMode === "circuit" ? portalShape : undefined}
     >
       <div className="stage-ambient" aria-hidden="true" />
       <div className="stage-crt-startup" aria-hidden="true"><div className="stage-crt-startup-screen" /></div>
-      <div className="stage-masthead">
+      <div className="stage-masthead" style={previewMode === "circuit" && phase === "journey" ? { opacity: 1 - clampProgress((percent / 100 - .83) / .1) } : undefined}>
         <span>
-          HADESD<span className="stage-dot">®</span>
+          {siteTitle}
         </span>
       </div>
       <div
@@ -388,6 +499,8 @@ export function TerminalStage({
               progress={progress}
               pointer={pointer}
               reducedMotion={reducedMotion}
+              foregroundMode={previewMode ?? "binary"}
+              portalShape={portalShape}
               onInitialized={onInitialized}
               onFailure={fail}
             />
@@ -405,7 +518,7 @@ export function TerminalStage({
               : bootPercent < 45
                 ? "正在检查内存与硬件"
                 : bootPercent < 85
-                  ? "正在加载 HADESD 系统"
+                  ? `正在加载 ${siteTitle}`
                   : "系统就绪"}
           </span>
           <span aria-hidden="true">
@@ -424,9 +537,9 @@ export function TerminalStage({
           }}
           inert={!heroInteractive ? true : undefined}
         >
-          <h1 aria-label="让想象，接通现实。">
-            {["让想象，", "接通现实。"].map((line, row) => (
-              <span className="stage-hero-line" aria-hidden="true" key={line}>
+          <h1 aria-label={heroLines.join("")} data-custom-title={Boolean(heroTitle?.trim()) || undefined}>
+            {heroLines.map((line, row) => (
+              <span className="stage-hero-line" aria-hidden="true" key={row}>
                 {[...line].map((character, index) => (
                   <span className="stage-hero-glyph" key={index} style={{ "--glyph-order": row * 4 + index } as CSSProperties}>
                     {character}
@@ -446,11 +559,21 @@ export function TerminalStage({
       {["pullback", "resume", "penetrate", "reveal"].includes(phase) && (
         <p className="stage-phase-status" role="status" aria-live="polite">
           {phase === "pullback" ? "正在展开个人计算机"
-            : phase === "resume" ? "继续启动 HADESD 系统"
+            : phase === "resume" ? `继续启动 ${siteTitle}`
               : phase === "penetrate" ? "正在进入显示屏"
                 : `正在建立终端 ${revealStep} / ${REVEAL_GROUP_COUNT}`}
         </p>
       )}
+      {import.meta.env.DEV && previewMode && <ForegroundPreview
+        mode={previewMode}
+        shape={portalShape}
+        onShape={selectPortalShape}
+        percent={percent}
+        available={enabled && renderer !== "initializing" && !reducedMotion}
+        onMode={selectPreview}
+        onSeek={seekPreview}
+        onReplay={() => { previewStarted.current = true; window.dispatchEvent(new Event("hadesd:reboot")); }}
+      />}
       <noscript>
         <style>{`.terminal-stage{position:relative!important;height:auto!important;overflow:visible!important;padding:30px!important}.stage-content{position:relative!important;inset:auto!important;opacity:1!important;pointer-events:auto!important}.stage-phase-status,.stage-boot-status,.stage-hero,.stage-scroll-hint,.stage-masthead,.stage-ambient,.stage-graphics,.stage-crt-startup{display:none!important}html,body{height:auto!important;overflow:auto!important}`}</style>
       </noscript>

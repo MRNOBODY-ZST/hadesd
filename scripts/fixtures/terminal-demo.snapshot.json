@@ -1,0 +1,46 @@
+{
+  "releaseId": "demo-public-2026",
+  "createdAt": "2026-09-17T00:00:00Z",
+  "site": {
+    "title": "HADESD",
+    "tagline": "RESEARCH · ENGINEERING · CURIOSITY",
+    "introduction": "博客作者",
+    "homeText": "记录研究、工程与思考。让好奇心持续运行。",
+    "navigation": [
+      { "label": "文章", "href": "/posts" },
+      { "label": "项目", "href": "/projects" },
+      { "label": "研究", "href": "/research" }
+    ],
+    "links": []
+  },
+  "contents": [
+    {
+      "id": "demo-hello-world",
+      "revisionId": "demo-hello-world-v1",
+      "type": "POST",
+      "title": "Hello, terminal. / 从终端开始",
+      "slug": "hello-world",
+      "summary": "用熟悉的命令，探索一个可以阅读的终端。",
+      "markdown": "# Hello, terminal.\n\n以命令行的方式，阅读一篇真正的 **Markdown** 文章。\n\n## 从目录开始\n\n- `ls` 浏览公开文章、项目与研究。\n- `cd posts` 进入文章目录。\n- `open hello-world.md` 在终端中直接阅读。\n\n```sh\nguest@hadesd:~ $ cd posts\nguest@hadesd:~/posts $ open hello-world.md\n```\n\n> 记录研究、工程与思考。让好奇心持续运行。\n\n## 为阅读而造\n\n标题、列表、代码和引用，都保留 Markdown 原本的结构。\n\n| 操作 | 命令 |\n| --- | --- |\n| 查找内容 | `search terminal` |\n| 查看帮助 | `help open` |\n| 调整显示 | `display` |\n\n这是用于 README 录制的公开示例内容。\n",
+      "tags": ["terminal", "markdown"],
+      "language": "zh-CN",
+      "route": "/posts/hello-world",
+      "publishedAt": "2026-09-17T00:00:00Z",
+      "updatedAt": "2026-09-17T00:00:00Z"
+    },
+    {
+      "id": "demo-building-in-public",
+      "revisionId": "demo-building-in-public-v1",
+      "type": "POST",
+      "title": "Building in public / 保持记录",
+      "slug": "building-in-public",
+      "summary": "把过程写下来，让想法有迹可循。",
+      "markdown": "# 保持记录\n\n把过程写下来，让想法有迹可循。\n",
+      "tags": ["notes"],
+      "language": "zh-CN",
+      "route": "/posts/building-in-public",
+      "publishedAt": "2026-09-16T00:00:00Z",
+      "updatedAt": "2026-09-16T00:00:00Z"
+    }
+  ]
+}

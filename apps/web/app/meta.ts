@@ -1,11 +1,14 @@
+import { normalizeSiteOrigin } from "@hadesd/contracts/site-origin";
+
 export function pageMeta(
   title: string,
   description: string,
   path: string,
   siteTitle = "HADESD",
+  siteOrigin?: string,
 ) {
   const full = title === siteTitle ? title : `${title} — ${siteTitle}`;
-  const url = "https://hadesd.sh" + path;
+  const url = normalizeSiteOrigin(siteOrigin) + path;
   return [
     { title: full },
     { name: "description", content: description },

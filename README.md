@@ -1,203 +1,450 @@
 # HADESD
 
-**a personal daemon.** 一台记录研究、工程与思考的个人计算机。v9 恢复经典 Macintosh 128K 风格的立式主机，搭配分体键盘和鼠标；左侧是暖白宋体大标题「让想象，接通现实。」，滚动提示与下箭头紧随其后。手机保持标题在上、电脑在下。五秒开机依次经历黑色 CRT 预热、DOS 滚屏、显示模式切换和图形界面加载至 80%，随后镜头带着残影拉远。电脑屏幕轮播八种终端演示，地面保留柔化的实时反射。滚轮或触屏上划逐步推近屏幕，穿过保留对称 Mac 图标的 ASCII 滚筒与有深度的二进制字符流，再回到启动画面完成剩余进度；镜头继续单向穿入屏幕，七批终端内容依次显现，最后光标开始接受输入。后台是独立的中文 Markdown 写作界面。
+**a personal daemon.** 一个可以部署在自己服务器上的终端风格博客。
 
-显示层使用 **Three.js 0.186.0、React Three Fiber 9.7.0、WebGPU / WebGL2、Three Shading Language**。真实终端文字缓冲与场景 render target 组成核心双 RT 通道，处理曲面、扫描线、色散与辉光；物理电脑的全部屏幕内容共用 CRT 镜片，平面反射相机直接渲染同一场景与动态屏幕材质，不另加地面屏幕投影。暖灰、淡紫薄雾使用两个世界空间体积和三维噪声逐步采样，分别形成近地与机后雾层，在现有场景中绘制，不新增离屏通道或 Canvas。电脑和对称 Mac Face 画面由本站生成，ASCII 屏幕变形与逐格滚动继续适配 [Skyworks 的 CylinderPlane](https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx)，保留算法来源。每格图标之外的背景字符由 GPU 动态更新，二进制流使用实例化绘制。GPU 后处理覆盖三维场景，整页 CSS glass 补充终端质感，后台使用较轻效果。所有 CRT 保留圆润黑色裁切，移除显式闭合浅色描边；满屏显像时，背景、地面与雾层退场，屏幕直接和黑色相接。GPU 初始化前也使用无浅色边线的原生黑色显像画面。
+HADESD 是一个开源、自托管的博客与内容发布系统。每位使用者可以独立部署自己的站点，在后台配置站点名称、个人介绍、标语、开场标题和链接，并绑定自己的域名。公开站保留复古 Macintosh、CRT 和浏览器终端风格；作者在中文后台写作，读者可以注册、评论和管理个人附件。
 
-经典主机只绕竖轴转动，分体键盘和鼠标保留各自造型。镜头在介绍阶段由 44° 温和展开到 52°，距离同步做正切补偿；桌面和手机使用不同的相机高度与偏航，进入滚筒前回到共享交接位置。主机、键盘和鼠标对齐共同支撑平面，三个独立占地范围同时供雾气避让与接触阴影使用；模型资源由组件释放，共享屏幕材质由场景管理。公开站 139 项测试、类型检查及四项开场 E2E 已通过，经典版已发布到隔离 QA，最终静态八阶段录屏与三场景性能复测也已通过。几何参数、当前预览与验证证据见 [docs/crt-journey.md](docs/crt-journey.md)。
+正文从冻结快照预渲染为静态页面，账号、搜索、评论与写作操作由 Spring WebFlux 后端处理。保存草稿与公开发布相互独立，发布 Worker 构建整站并原子切换版本。
 
-此仓库保留用户 `daemon.zip` 中的 **Spring Boot 4.1.1 / Java 25 / Gradle 9.7.1**，按本次要求使用 **WebFlux + R2DBC MySQL + Reactive Redis**，不使用 MVC/JPA。附件原文保存在 [docs/source-requirements.md](docs/source-requirements.md)，实际取舍见 [docs/decisions.md](docs/decisions.md)。
+![终端演示：输入命令、浏览目录并阅读 Markdown](docs/assets/terminal-demo.gif)
 
-博客已支持读者注册登录、资料管理、Markdown 评论与回复、图片显示、个人文件上传下载，以及作者写作、修订和发布。公开站点的账号、搜索、显示设置与评论操作均在终端内完成，`open` 使用 Vim 风格的阅读/编辑缓冲区。文章及用户附件可以统一存入私有 MinIO；配置、校验迁移与备份见 [docs/minio.md](docs/minio.md)。高级 Markdown 包含代码高亮、公式、脚注、提示块、折叠内容和按需 Mermaid 图表。操作及权限说明见 [docs/blog.md](docs/blog.md)，写作语法见 [docs/markdown-guide.md](docs/markdown-guide.md)。
+演示录制自真实界面，使用公开示例数据；为便于阅读，关闭 GPU CRT 效果。
 
-## 本地启动
+[功能与交互](#功能与交互) · [架构](#架构) · [快速开始](#快速开始) · [源码开发](#源码开发) · [写作与发布](#写作与发布) · [部署与存储](#部署与存储) · [验证](#验证) · [维护与排查](#维护与排查) · [文档索引](#文档索引)
 
-需要 Java 25、Node.js 24.10 或兼容的新版本、pnpm 11.19.0、Docker Engine/Compose。数据库使用独立容器与持久卷。所有本地入口仅监听 loopback；不操作真实域名。
+## 功能与交互
+
+### 公开阅读
+
+- **独立内容地址**：文章、项目、研究记录、关于、近况、友链、标签与搜索入口；构建生成 HTML、导航数据、RSS、sitemap 和页面元信息。
+- **浏览器终端**：用目录和命令浏览内容，支持路径补全、命令历史、文本检索及 Vim 风格编辑。也可以直接点击链接阅读。
+- **复古显示**：三维电脑、开机画面、滚动控制的 ASCII 旅程和 CRT 显示；支持琥珀、绿色、纸张主题，以及 CRT 强度和专注阅读设置。
+- **高级 Markdown**：代码高亮与复制、表格、任务列表、脚注、数学公式、提示块、折叠内容和按需渲染的 Mermaid 图表。
+- **读者互动**：注册登录、资料与密码管理、Markdown 评论和回复、个人文件上传下载。个人文件默认私有，作为公开评论附件后才允许公开读取。
+
+终端外框固定，内部正文与命令历史支持鼠标滚轮、触摸和 PgUp / PgDn 原生滚动。长输出从开头显示，可点击「↓ 最新」回到末尾。终端是浏览器中的虚拟文件系统，不连接服务器 Shell，也不执行任意系统程序。
+
+### 作者后台
+
+后台位于 `/admin/`，提供内容搜索与分类、Markdown 编辑、自动保存、历史修订、媒体库、发布记录、评论管理和站点设置。
+
+- 文稿支持回收站、恢复和受限制的永久删除；在线文稿需要先撤稿。
+- 媒体支持多文件上传、拖放与粘贴插入、引用查询、筛选和批量删除，仍被保护性引用使用的文件不能直接删除。
+- 发布时选择明确修订；撤稿和回滚同样经过发布任务。
+- 后台有纸张手记、石墨夜间、冰川工作台和琥珀终端四套外观。
+
+### 终端速查
+
+```sh
+help                         # 命令列表；man <command> 查看单个命令
+pwd                          # 当前虚拟目录
+ls -la                       # 浏览文件与目录
+cd ~/posts                   # 进入文章目录；cd - 返回上次目录
+open welcome-to-hadesd.md     # 在历史中渲染 Markdown（运行 demo 后可用）
+cat welcome-to-hadesd.md      # 查看完整 Markdown 原文
+vim welcome-to-hadesd.md      # 打开独立 Vim 缓冲区
+search "Reactive"            # 检索当前公开索引的标题、摘要、标签与路径
+login                        # 逐项输入账号信息，密码使用隐藏输入
+files                        # 查看个人文件
+comment                      # 对当前文章发表评论
+```
+
+| 操作 | 命令或快捷键 |
+| --- | --- |
+| 阅读 Markdown | `open` / `less` / `md` / `preview <file>` |
+| 查找和处理原文 | `find`、`head`、`tail`、`grep`、`wc` |
+| 补全与历史 | Tab / Shift+Tab 循环补全；Ctrl+Space 查看候选；单行命令框中 ↑ / ↓ 召回历史 |
+| 滚动与中断 | PgUp / PgDn 滚动历史；Ctrl+C 中断命令或文字交互；Ctrl+L 清屏 |
+| 账户 | `register`、`login`、`profile`、`profile edit`、`passwd`、`logout` |
+| 文件与评论 | `files`、`upload`、`download <ID>`、`files rm <ID>`、`comments`、`mycomments` |
+| 显示 | `display`、`theme amber\|green\|paper`、`crt off\|low\|full`、`reader on\|off` |
+| 搜索面板 | Cmd+K，或在命令框外按 Ctrl+K；Esc 返回，也可在底部程序命令栏执行 `:q` |
+| 重播开场 | `reboot` |
+
+游客家目录为 `/home/guest`，登录后为 `/home/<用户名>`，`~` 指向当前家目录。支持引号、转义和公开环境变量；管道、重定向、命令串联与命令替换尚未实现。
+
+`search` 命令在当前冻结索引中匹配；Ctrl/Cmd+K 面板的全文搜索入口会进入 `/search`，由后端检索当前公开版本。评论逐行输入 Markdown，单独输入 `.` 结束，再确认发布；每条最多 4 个附件。个人文件每账户最多 100 个、合计 100 MiB。
+
+Vim 中按 `i` / `a` 编辑，Esc 返回 NORMAL，`:w` 保存，`:wq` 保存退出，`:q!` 放弃修改。管理员进入编辑时读取服务器最新草稿，保存生成新修订但不会自动发布；普通读者编辑的是明确标注为 `LOCAL COPY` 的浏览器本地副本。
+
+显示层优先使用 WebGPU，回退到 WebGL2；`?gpu=webgl` 可用于检查 WebGL2。关闭 CRT、选择纸张主题或开启专注阅读时使用原生终端；系统减少动态效果设置会跳过片头。GPU 初始化失败或设备丢失时回退到原生界面。链接、输入、选择和语义仍由真实 DOM 提供，无 JavaScript 与打印场景保留静态正文。开机日志和进度条属于视觉叙事，不是后端或设备的运行诊断。
+
+## 架构
+
+```mermaid
+flowchart LR
+    Browser[浏览器] --> Entry[Nginx / 本地代理]
+    Entry --> Static[公开静态页面与后台 SPA]
+    Entry --> API[Spring WebFlux API]
+    API --> MySQL[(MySQL)]
+    API --> Redis[(Redis)]
+    API --> Media[私有文件存储]
+    Worker[发布 Worker] -->|领取任务与冻结快照| API
+    Worker -->|构建、校验、原子切换| Releases[发布目录 current]
+    Releases --> Static
+    Releases -.只读 manifest.-> API
+```
+
+| 模块 | 职责与主要技术 |
+| --- | --- |
+| `apps/web` | React 19、React Router 8、Vite、TypeScript；静态预渲染的公开站；Three.js、React Three Fiber、TSL 显示层 |
+| `apps/admin` | React + Vite 后台 SPA，TanStack Query 管理请求，Zustand 管理界面状态 |
+| `backend` | Java 25、Spring Boot 4.1.1、WebFlux、R2DBC MySQL、Reactive Redis、Spring Security；Gradle Wrapper 9.7.1 |
+| `apps/publisher` | Node.js Worker，领取任务、执行固定构建入口、校验产物、切换版本与清理过期发布 |
+| `packages/terminal-core` | 虚拟文件系统、命令解析、执行、历史与补全 |
+| `packages/markdown` | 前后台共用的 Markdown 解析、净化、排版与图表渲染 |
+| `packages/contracts` / `packages/ui` | TypeScript 数据契约、共享组件与主题样式 |
+| `infra` / `scripts` / `tests` | 容器与代理配置、开发运维脚本、端到端测试 |
+
+依赖精确版本以各目录的 `package.json`、`pnpm-lock.yaml`、`backend/build.gradle` 和 `backend/gradle.lockfile` 为准。
+
+MySQL 保存内容、不可变修订、发布任务、账户、评论、附件元数据与审计事件；Redis 保存服务端会话、限流计数及可重建缓存。文件原文存入本地目录或私有 S3 兼容存储。Flyway 在启动时执行数据库迁移，请求链使用响应式数据库与 Redis 客户端。
+
+公开正文从磁盘直接提供，生产环境不需要 Node SSR 服务。后端只读取当前发布清单来判定公开内容，数据库中的草稿或任务状态不会提前改变公开版本。
+
+## 快速开始
+
+推荐使用 Linux 服务器或支持 Docker 的设备。安装 Docker Engine / Docker Desktop 和 **Docker Compose 2.24.4+**，下载本仓库后，在仓库根目录执行：
+
+```sh
+./scripts/deploy.sh init --site-origin http://localhost:18088 --admin-user admin
+./scripts/deploy.sh start
+./scripts/deploy.sh bootstrap
+```
+
+宿主机无需安装 Node.js、pnpm 或 Java，镜像在 Docker 中构建。首次构建需要联网下载依赖。
+
+1. 打开 [管理后台](http://localhost:18088/admin/)，使用上面指定的用户名登录；随机初始密码保存在 `.local/docker/admin-password`，脚本不会打印密码。
+2. 在「站点设置」填写名称、标语、开场标题、个人简介、首页文案与链接，并保存。
+3. 到发布页面初始化空站，或新建文章后发布。等任务显示成功，再打开 [公开博客](http://localhost:18088/)。
+
+默认配置保存在 `.env.docker`，数据目录为 `.local/docker/`，Compose 项目名为 `personal-blog`。重复初始化不会覆盖配置与密码；`bootstrap` 只用于新数据库。默认入口只监听本机；从其他设备访问或绑定域名，见[自托管部署指南](docs/self-hosting.md)。
+
+```sh
+./scripts/deploy.sh status          # 查看服务状态
+./scripts/deploy.sh logs publisher  # 查看发布日志
+./scripts/deploy.sh stop            # 停止服务，保留数据
+```
+
+站点设置随发布生效。部署地址由 `SITE_ORIGIN` 控制，canonical、Open Graph、RSS 和 sitemap 都使用这个地址；更换域名后需要重建容器并重新发布。HADESD 保留为软件名称与复古电脑的系统标识，公开站点名称和作者介绍可自由修改。
+
+## 源码开发
+
+下面适用于**本机运行应用、Docker 运行 MySQL / Redis**。它与上述 Docker 安装使用不同配置和数据目录。
+
+### 1. 准备环境
+
+需要：
+
+- Node.js **24.10.0 或更高版本**。
+- pnpm **11.19.0**，与根 `package.json` 的 `packageManager` 一致。
+- **JDK 25**；Gradle 使用仓库内的 Wrapper，无需全局安装。
+- Docker Engine / Docker Desktop 和 Docker Compose，Docker 服务已启动。
 
 ```sh
 npm install --global pnpm@11.19.0
 pnpm install --frozen-lockfile
-pnpm setup
+pnpm run setup
+```
+
+`pnpm run setup` 生成 `.env`、`.local/` 运行目录和 `.local/admin-password`。凭据随机生成，环境文件与密码文件权限为 `600`，不会打印密码。已有 `.env` 时脚本保留配置并退出；不要先复制一个未填写的 `.env.example` 再期待初始化脚本补齐它。
+
+管理员默认用户名为 `admin`，初始密码存于 `.local/admin-password`；也可以在创建管理员前将其改为自己的密码，至少 14 个字符。脚本同时准备 MinIO 配置，但存储模式仍为 `local`。
+
+### 2. 启动依赖并构建
+
+```sh
 pnpm deps:up
 pnpm backend:build
 pnpm bootstrap
 pnpm build
 ```
 
-`pnpm setup` 生成 `.env` 与 `.local/admin-password`，权限为 600，不打印或提交密码。管理员默认用户名为 `hades`，密码从该文件读取；可以在 bootstrap 前修改文件为自己的强密码（至少 14 个字符）。`pnpm bootstrap` 仅通过本机 CLI 建立初始管理员，已存在管理员时拒绝覆盖，没有匿名管理员初始化 API。公开注册只创建普通读者账户。
+`pnpm bootstrap` 通过本地 CLI 创建初始管理员，已有管理员时拒绝覆盖。公开注册只创建普通读者账户。
 
-每个环境变量的用途及容器覆盖规则见 [docs/configuration.md](docs/configuration.md)。
+### 3. 启动三个进程
 
-分别在三个终端启动：
+分别在三个终端运行，并保持它们运行：
 
 ```sh
+# 终端 1：后端 API
 pnpm backend
 ```
 
 ```sh
+# 终端 2：发布 Worker
 pnpm publisher
 ```
 
 ```sh
+# 终端 3：静态站点与同源 API 代理
 pnpm serve
 ```
 
-- 公开站点：**http://127.0.0.1:18088/**
-- 管理后台：**http://127.0.0.1:18088/admin/**
-- 后端：`127.0.0.1:28080`，健康检查 `/health`
-- MySQL：`127.0.0.1:23306`；Redis：`127.0.0.1:26379`
+| 入口 | 默认地址 |
+| --- | --- |
+| 公开站 | [http://127.0.0.1:18088/](http://127.0.0.1:18088/) |
+| 写作后台 | [http://127.0.0.1:18088/admin/](http://127.0.0.1:18088/admin/) |
+| 后端健康检查 | [http://127.0.0.1:28080/health](http://127.0.0.1:28080/health) |
+| MySQL / Redis | `127.0.0.1:23306` / `127.0.0.1:26379` |
 
-首次没有 `current` 发布指针，公开接口返回 `EMPTY`。登录后台，到发布页面初始化空站点；也可以创建文章后直接发布。仅构建前端不会改变线上指针，Worker 必须运行。端口被占用时修改 `.env` 对应值，并保持 `API_ORIGIN` 与 `SERVER_PORT` 一致。
+这些端口是初始化脚本生成的本地配置，入口均绑定 loopback。
 
-需要明确标记的演示文章与项目时，**显式运行**：
+### 4. 完成首次发布
+
+首次启动没有 `current` 发布版本，公开入口会显示等待发布。登录后台后，可在发布页面初始化空站点，或创建内容并发布。`pnpm build` 只生成构建产物，实际公开站由 Worker 发布。
+
+需要示例内容时，在上述三个进程运行期间显式执行：
 
 ```sh
 pnpm demo
 ```
 
-它通过真实登录、保存与发布 API 工作；不会填入真实个人履历或访问统计。再次执行保留已存在/已上线内容。正式使用时可在后台撤下示例。
+该命令通过真实 API 创建和发布标有「示例」的文章与项目，会写入当前数据库及发布目录。正式使用时可在后台撤稿。
 
-开发热更新可运行 `pnpm dev:admin`（5174）及 `pnpm dev:web`（5173）。公开开发默认空快照；如需当前版本，设置 `HADESD_SNAPSHOT` 为 `.local/published/current/snapshot.json` 的绝对路径。生产不运行 Vite 或 Node SSR；`pnpm serve` 只是本地静态服务和 API 代理。
+### 热更新
 
-## 开机、探索与终端操作
+按需启动开发服务器；同时开发前后台时，分别在两个终端运行：
 
-初次开机共五秒：350 毫秒黑色 CRT 预热、1.6 秒 DOS 日志滚屏、180 毫秒显示模式切换，再用 2.87 秒让图形界面的状态行、分段进度条和百分比从 0% 加载到 80%。随后约 1.8 秒拉远到电脑介绍画面并等待操作；屏幕从命令提示符开始，轮播其余随机排序的 Mac 图标、ANSI 色彩和五种 Python 演示。滚轮和上划以细粒度步幅控制镜头旅程，页面本身不滚动；停止输入后平滑停在当前目标，也可反向探索。旅程到终点后，同一图形界面约 1.3 秒续载至 100%，镜头再用约 1.1 秒单向穿入屏幕，不再压缩画面或插入故障闪动。随后七组终端内容以每组 70–120 毫秒的间隔显现，约 0.6–0.9 秒后完成显示并允许命令输入。片头没有直接进入或跳过按钮，Enter / Escape 不会跳过剩余阶段。
+```sh
+# 公开站热更新，默认 http://127.0.0.1:5173/
+pnpm dev:web
 
-终端屏幕占视口宽度的 98%、高度的 96%，内容留有内边距与手机安全区。首页、目录、文章和命令输出都在同一块固定屏幕中，鼠标滚轮不推动正文。长内容逐屏阅读，前后屏至少保留一行重叠；表单控件较高时增加重叠，底部光标与分页操作始终可见。GPU 的 `contentRect` 取自真实 DOM 区域，显示文字与链接、选择和输入的坐标保持一致。
+# 后台热更新，默认 http://127.0.0.1:5174/admin/
+pnpm dev:admin
+```
 
-| 操作 | 方法 |
+公开开发默认读取空快照。需要已发布内容时，在首次发布后指定快照的**绝对路径**：
+
+```sh
+HADESD_SNAPSHOT="$PWD/.local/published/current/snapshot.json" pnpm dev:web
+```
+
+如果修改过 `RELEASE_ROOT`，使用该目录下 `current/snapshot.json` 的实际路径。快照在启动和构建时读取；发布后需要重启开发服务器才能载入新快照。后台开发服务器连接真实后端，保存、上传和发布都会影响所连接的环境。
+
+两个开发服务器默认代理到 `http://127.0.0.1:28080`。若更改后端端口，启动时显式传入 `API_ORIGIN`，例如：
+
+```sh
+API_ORIGIN=http://127.0.0.1:28081 pnpm dev:admin
+```
+
+### 三维效果预览
+
+开发模式可打开 [前景对比面板](http://127.0.0.1:5173/?effects=circuit&shape=star)，在相同滚动位置比较芯片装配、信号穿屏、打印纸带和 Mac 窗口。支持：
+
+- `effects=assembly|circuit|paper|macos`。
+- `circuit` 的入口造型：`shape=star|spark|diamond|hexagon|ring`。
+- 拖动进度条、切换姿态或重播开场。
+
+预览面板和效果加载由 `import.meta.env.DEV` 控制，不会因生产 URL 带有这些参数而启用。实现说明见[前景预览文档](apps/web/app/effects/three/foreground/README.md)，场景设计背景见 [CRT 旅程](docs/crt-journey.md)。
+
+### 常用命令
+
+| 命令 | 用途 |
 | --- | --- |
-| 探索电脑 | 介绍画面中滚轮向下、触屏上划，分次小幅推进；反向滚动或下划可后退 |
-| 键盘探索 | ArrowDown / ArrowUp 每次前进或后退 4%；PageDown / 空格 / End 每次前进 12%，PageUp / Shift+空格 / Home 每次后退 12%；Home / End 也按步幅移动 |
-| 打开文件 | 点击文件名查看排版正文；`open` / `vim` / `less welcome-to-hadesd.md` 在终端内打开源码缓冲区 |
-| 终端翻屏 | 命令执行后焦点回到屏幕，↑↓、PageUp / PageDown 直接翻屏；主动进入命令框后 ↑↓ 调用历史，PageUp / PageDown 仍可翻屏 |
-| Vim 编辑 | `i` / `a` 进入 INSERT，Esc 返回 NORMAL；方向键 / h j k l 移动，PgUp / PgDn 翻页，`gg` / `G` 到首尾 |
-| Vim 保存与退出 | `:w` 保存、`:wq` 保存退出、`:q` 退出、`:q!` 放弃修改。管理员编辑服务器最新草稿；普通读者编辑明确标注的浏览器本地副本 |
-| 命令输入 | Enter 执行，Shift+Enter 换行，↑↓ 历史，Tab / Shift+Tab 补全并循环；Ctrl+Space 查看候选；Esc 后 Tab 离开命令框；中文输入法选词不会误执行 |
-| 返回当前文件 | 在命令输出中按 Escape；`clear` 清空输出但保留输入历史 |
-| 搜索 | 输入 `search 关键词`，点击 `[ search ]`，或按 Ctrl/Cmd+K 打开终端内的搜索程序；`:q` / Esc 返回 |
-| 显示设置 | `display` 在终端内打开设置；也支持 `theme amber\|green\|paper`、`crt off\|low\|full`、`reader on\|off` |
-| 账号与文件 | `login`、`register`、`profile`、`files`、`mycomments`、`logout`；密码仅在密码字段输入，程序支持 `:q` / Esc / Ctrl+C 返回 |
-| 重新开机 | 输入 `reboot` 或点击 `[ reboot ]`，重置全部进度，重新经历黑色 CRT、DOS 与图形界面 0% 启动；旅程结束进入续启后，滚轮不能再退回介绍 |
-
-默认使用完整 CRT。支持 WebGPU 时优先使用，否则自动回退 WebGL2；`?gpu=webgl` 可显式验证 WebGL2。轻微模式在终端中减少渲染频率。关闭 CRT、纸张主题或专注阅读直接使用原生终端；系统“减少动态效果”跳过全部片头。已有显示选择继续保存在当前浏览器的 `hadesd.display.v2` 中。桌面进入终端后聚焦屏幕；开始输入命令时才进入命令框。表单和 Vim 缓冲区有各自的键盘操作，手机可以使用屏内按钮。
-
-终端保留真实 DOM 的链接、输入、选取和语义。GPU 初始化失败或运行中丢失设备时直接恢复原生终端。禁用 JavaScript 和打印时，预渲染文章恢复自然文档布局，保证全文可访问。终端不连接服务器 Shell。DOS 日志、进度条和屏幕轮播都是片头演示，不是设备或后端的真实启动诊断；其中 Python 示例可复制到具备 Python 的终端独立运行，网站本身不执行这些代码。
+| `pnpm build` | 构建公开站与后台，不切换公开版本 |
+| `pnpm backend:build` | 清理并构建后端可执行 JAR；已有进程需另行重启 |
+| `pnpm typecheck` | 执行各工作区包的类型检查 |
+| `pnpm test` | 执行各工作区包的单元测试 |
+| `pnpm backend:test` | 执行后端测试，集成测试需要 Docker 和 MinIO 测试镜像 |
+| `pnpm test:e2e` | 对运行中的隔离环境执行 Playwright 测试 |
+| `node scripts/openapi.mjs` | 重新生成 `docs/openapi.json` |
+| `pnpm backup` / `pnpm restore:drill` | 本地开发数据备份与隔离恢复演练 |
+| `pnpm media:cleanup` | 预览孤立媒体清理候选；加 `--apply` 才执行删除 |
 
 ## 写作与发布
 
-1. 登录后台，创建文章、项目、研究记录或页面。PAGE 的固定标识为 `about` / `now`。
-2. 编辑标题、摘要、标签、语言和 Markdown。停顿 1.2 秒后自动保存，也可立即保存。每次成功保存生成不可变修订；另一标签页发生版本冲突时会暂停保存并保留本地文字。
-3. 媒体页上传 PNG/JPEG/WebP（10 MiB）或 PDF（25 MiB），在编辑器中插入或设为封面。实际文件特征和像素尺寸由服务端检查。附件在引用它的版本上线前保持私有。
-4. 点击发布，明确选择修订并确认。任务依次经过 `QUEUED → BUILDING → READY → DEPLOYING → SUCCEEDED`，只有成功切换的版本可公开读取。
-5. 修改已上线文章只改变草稿。再次发布前，公开正文、标签和链接保持原版。
-6. 撤稿生成不包含该内容的新站点版本，旧地址返回 404；公开搜索和媒体引用同时按当前版本过滤。
-7. 发布记录中可回滚保留版本。回滚会创建新的发布版本，不修改历史修订。过期版本不可回滚。
-8. 站点设置保存后仍是后台配置，点击“发布站点设置”才上线；空站也支持。
+1. **创建内容**：支持文章 `POST`、项目 `PROJECT`、研究记录 `RESEARCH` 和页面 `PAGE`；页面的固定标识为 `about` / `now`。
+2. **编辑草稿**：填写标题、摘要、标签、语言和 Markdown。编辑器在停顿后自动保存，也可手动保存；每次保存产生不可变修订。版本冲突时暂停保存并保留本地文字。
+3. **插入附件**：通过媒体库、拖放或粘贴插入。文件特征由服务端检查，图片上限 10 MiB，PDF / ZIP 上限 25 MiB，UTF-8 文本上限 2 MiB；HTML / SVG 不受支持。未被当前公开版本引用的作者附件保持私有。
+4. **选择修订并发布**：Worker 从冻结快照构建，任务依次经历 `QUEUED → BUILDING → READY → DEPLOYING → SUCCEEDED`。构建或校验在切换前失败时，旧站继续提供服务。
+5. **更新与撤稿**：修改已上线内容只改变草稿；再次发布后才更新正文。撤稿生成不含该内容的新版本，原地址返回 404，公开搜索与附件访问随当前版本更新。
+6. **回滚与设置**：回滚保留版本会生成新发布，不改写历史修订；目标版本包含回收站文稿时需先恢复文稿。站点设置保存后不会立即生效，会随下一次普通发布或撤稿上线，也可单独发布设置；回滚恢复目标快照中的设置。当前版本与前 5 个成功历史版本用于保留和回滚，过期版本不可回滚。
 
-完整接口说明见 [docs/api-contract.md](docs/api-contract.md) 与 [OpenAPI 3.1](docs/openapi.json)。更新契约后运行 `node scripts/openapi.mjs` 重建 OpenAPI。
-
-## 发布一致性与安全
-
-MySQL 保存内容、不可变修订、附件元数据、审计事件与发布任务。Redis 保存 Session、限流计数与可重建缓存，不是文章数据库。非阻塞数据库及 Redis 操作使用 Reactor；Flyway 在启动阶段迁移，密码散列与文件特征检查隔离到 boundedElastic。
-
-发布 Worker 仅执行仓库固定构建入口，从内部 API 获取冻结快照，在非公开目录生成所有 HTML、导航 `.data`、RSS 和 sitemap。校验完成后原子切换：
+默认发布目录结构如下：
 
 ```text
 .local/published/
-  current -> releases/<releaseId>
-  releases/<releaseId>/
-    manifest.json       # 当前版本权威，只读提供给后端
-    snapshot.json       # 私有构建快照，Nginx 不提供
-    site/               # 唯一公开正文目录
-  assets/               # 保留 hash 代码资源，支持旧标签页
-  staging/              # 未激活的版本，不对外提供
-  work/                 # 隔离构建工作目录
+├── current -> releases/<releaseId>
+├── releases/<releaseId>/
+│   ├── manifest.json       # 当前公开版本的权威清单
+│   ├── snapshot.json       # 私有冻结快照，不作为公开静态文件提供
+│   └── site/               # HTML、导航数据、RSS、sitemap 等公开产物
+├── assets/                 # 保留带内容哈希的代码资源，支持旧标签页
+├── staging/                # 尚未激活的版本
+└── work/                   # 每次发布的构建工作目录
 ```
 
-后端通过只读 manifest 判断当前版本。数据库状态不会提前让草稿公开。过期 `releaseId` 返回 `409 RELEASE_CHANGED`。构建失败保留旧站；Worker 切换后崩溃可通过 manifest 对账。任务有租约、幂等回报和重试边界。旧正文目录从不挂载为公开 URL。
+Worker 完成构建与校验后原子切换 `current`，后端读取 manifest 判断可见版本。任务带租约、心跳与回报校验；Worker 切换后意外退出时，可通过 manifest 对账。持有旧 `releaseId` 的请求会收到 `409 RELEASE_CHANGED`，客户端应刷新当前版本。
 
-管理员采用 Redis 服务端 Session，Cookie 为 HttpOnly、SameSite=Strict、路径 `/api`；HTTPS 环境设置 `SESSION_SECURE=true`。保留 CSRF 验证，登录/退出后刷新令牌，不把认证令牌放进 localStorage。Worker 使用独立 `X-Worker-Token`，公开代理拒绝整个 internal 命名空间。
+管理员和读者使用 Redis 服务端 Session，Cookie 设置 HttpOnly、SameSite=Strict 和 `/api` 路径；写入保留 CSRF 校验。Worker 使用独立令牌，公开代理拒绝 `/api/v1/internal`。Markdown 不执行原始 HTML 或 MDX，数学和图表经过受限渲染。更多边界见 [API 契约](docs/api-contract.md)、[博客交互](docs/blog.md)和[媒体访问](docs/media-delivery.md)。
 
-终端是浏览器内的公开内容导航器，不连接 Shell。Markdown 禁止原始 HTML 和可执行 MDX，数学渲染关闭 trust。公开构建为每页的实际内联脚本生成 CSP hash；不需要 `unsafe-eval`。KaTeX 排版允许受约束输出中的 inline style。HTML/data 不使用长期缓存，hash 资源可缓存一年。
+## 部署与存储
 
-## Compose 部署
+### 部署方式
 
-完整容器配置在 `infra/compose/compose.yaml`，数据库/Redis 没有对外端口，backend/Worker 位于 internal 网络；Nginx 默认仅映射 `127.0.0.1:18088`。所有镜像版本及基础镜像 digest 固定。请勿同时让本机 Worker 与容器 Worker 指向不同数据库却共享同一发布目录。
+| 方式 | 配置与用途 |
+| --- | --- |
+| 独立 Docker 安装 | `deploy.sh` + `.env.docker` + `compose.standalone.yaml`；供新使用者部署自己的博客 |
+| 本地源码开发 | `.env` + `dependencies.yaml`；Docker 只运行 MySQL / Redis，应用在宿主机运行 |
+| 自定义基础设施 | `compose.yaml` 配合存储等覆盖文件；按自己的环境管理目录、权限、网络和备份 |
+| 原有专用生产环境 | `compose.production.yaml` + `infra/deploy/`；保留既有 WireGuard 运维方案 |
 
-在**单独目录/主机**准备 `.env`，确保 `RELEASE_ROOT`、`MEDIA_ROOT` 为绝对路径并让容器 UID 1000 可写，管理员密码文件可由 backend UID 1000 读取。不要使用全局 777。
+完整 Compose 运行 MySQL、Redis、后端、Worker 和 Nginx。默认只有 Nginx 暴露 HTTP 入口；后端只读挂载发布目录，Worker 负责写入。独立安装使用初始化时的 UID/GID 访问数据目录，不需要将目录改为全局可写。
+
+不同部署必须使用不同的环境文件、Compose 项目名、数据目录和监听端口。仅更换项目名不会隔离共用的宿主机目录。HTTPS、NAS、多个实例、升级与备份见[自托管部署指南](docs/self-hosting.md)。
+
+### 关键配置
+
+| 配置 | 说明 |
+| --- | --- |
+| `DB_*` / `REDIS_*` | 数据库和 Redis 地址、账号与密码；完整 Compose 在容器内覆盖服务地址 |
+| `SERVER_PORT` / `API_ORIGIN` / `LOCAL_PORT` | 本机后端端口、代理及 Worker 的后端地址、同源入口端口 |
+| `RELEASE_ROOT` / `MEDIA_ROOT` | 宿主机发布与本地媒体持久目录的绝对路径 |
+| `ADMIN_BOOTSTRAP_*` | 初始管理员用户名与密码文件，只用于初始化 |
+| `WORKER_TOKEN` | 后端与 Worker 共享的私有令牌 |
+| `SITE_ORIGIN` | canonical、RSS、sitemap 使用的正式站点地址；默认 `http://localhost:18088`，只能包含协议、主机与可选端口，不支持子目录部署 |
+| `SESSION_SECURE` | 本地 HTTP 使用 `false`，HTTPS 部署使用 `true` |
+| `STORAGE_MODE` | `local` 或 `s3`；仅修改此值不会迁移已有文件 |
+| `S3_*` / `AWS_*` | 私有桶、区域、兼容端点与凭据；AWS SDK 支持默认凭据链 |
+
+变量模板见 [.env.example](.env.example)，默认值和容器覆盖规则见[配置说明](docs/configuration.md)。
+
+### 文件存储
+
+| 方案 | 配置与入口 |
+| --- | --- |
+| 本地目录 | 默认 `STORAGE_MODE=local`，原文件保存在 `MEDIA_ROOT` |
+| 私有 MinIO | 在基础 Compose 上叠加 `compose.minio.yaml`，容器使用私有 S3 端点；需要主机访问时再叠加 `compose.minio.local.yaml` |
+| 外部 S3 兼容服务 | 设置 `S3_BUCKET`、`S3_REGION` 和凭据，按服务设置 `S3_ENDPOINT` / `S3_PATH_STYLE`；叠加 `compose.s3.yaml` 为后端提供出网网络 |
+
+外部 S3 示例仅适用于新安装或已经完成附件迁移校验的环境。先替换 setup 生成的 MinIO 桶、端点与凭据；使用 AWS 默认端点时清空 `S3_ENDPOINT`，并将 `S3_PATH_STYLE` 改为 `false`。下面的覆盖文件会直接将后端切换到 S3：
 
 ```sh
-pnpm setup
-docker compose --env-file .env -f infra/compose/compose.yaml build
-docker compose --env-file .env -f infra/compose/compose.yaml up -d mysql redis
-docker compose --env-file .env -f infra/compose/compose.yaml run --rm backend --bootstrap-admin
-docker compose --env-file .env -f infra/compose/compose.yaml up -d
+docker compose --env-file .env \
+  -f infra/compose/compose.yaml \
+  -f infra/compose/compose.s3.yaml up -d --wait
 ```
 
-生产入口已部署为 **[https://hadesd.sh](https://hadesd.sh)**，后台为 **[https://hadesd.sh/admin/](https://hadesd.sh/admin/)**。VPS Nginx 终止 TLS，经 WireGuard 转发到内网源站 `10.77.0.2:18088`。源站使用 `/opt/hadesd/app`、`/etc/hadesd/app.env` 和 `/srv/hadesd/published`，由 `/usr/local/sbin/hadesd-compose` 包装器与 `hadesd.service` 管理；组合基础 Compose、`compose.production.yaml` 和 `compose.minio.yaml`，保持 `SESSION_SECURE=true`。附件使用私有 MinIO，原 `/srv/hadesd/media` 保留为迁移源。现有环境不要重新运行上面的初始化 bootstrap。
+已有安装可执行 `node scripts/setup-minio.mjs` 补充缺失配置；它保留非空设置及当前存储模式。迁移需要暂停所有写入、备份、预检、复制并校验完成后再切换存储，步骤见 [MinIO 与存储迁移](docs/minio.md)。
 
-2026-09-10 已完成服务器构建发布，以及公开页面、注册登录、文件上传下载、评论权限、CRT 与终端交互验收；证书当时到期日为 **2026-12-08**，VPS 的 `certbot.timer` 已启用且运行，续期 dry-run 通过，并安装了成功续期后校验与 reload Nginx 的钩子。2026-09-11 已将经典 Macintosh 128K 的 v9 部署到正式站，以当前冻结快照重建，保留原有 4 条公开内容和站点设置；29 个附件已校验迁入私有 MinIO，迁移前后备份均通过。v5 至 v8 的历史隔离预览与 v9 当前状态另见 [CRT 旅程说明](docs/crt-journey.md)。完整运行路径、证书检查、当前快照发布和恢复流程见 [docs/deployment.md](docs/deployment.md)，测试记录见 [docs/progress.md](docs/progress.md)。公开内容升级仍须经过冻结快照与原子发布。
+存储桶保持私有，浏览器通过后端附件接口访问。作者附件按当前发布引用校验，读者附件按公开评论引用校验；默认不允许共享缓存绕过这些检查。浏览器不获得存储凭据或直连私有桶的下载地址。
 
-内部服务端口不绑定公网。代理/CDN 配置如引入内容缓存，发布与撤稿后必须清除 HTML、`.data`、RSS、sitemap 和媒体缓存，并确认 purge 成功后再报告撤稿完成。本次临时构建代理已移除，随后离线发布成功。
+### HTTPS 与已有生产环境
 
-本地存储是默认实现。S3 模式设置 `STORAGE_MODE=s3`、`S3_BUCKET`、`S3_REGION`，兼容存储可另设 `S3_ENDPOINT`、`S3_PATH_STYLE=true`。凭据使用 AWS SDK 默认凭据链（如运行环境注入 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` 或实例角色）；bucket 保持私有，策略仅允许目标 bucket 内所需 Get/Put/Delete/Head 对象操作。浏览器不获得凭据或存储 key。
+新安装使用 `compose.standalone.yaml`，将宿主机 TLS 入口反向代理到本地 HTTP 端口。该覆盖配置根据 `SITE_ORIGIN` 设置受信任的源站协议与主机，具体操作见[绑定域名](docs/self-hosting.md#绑定域名与-https)。
 
-连接外部 S3 时，完整 Compose 必须组合可选覆盖文件；它只给 backend 增加出网网络，仍不映射 backend 端口。默认本地模式继续使用 internal 网络隔离。`AWS_SESSION_TOKEN` 也可用于临时凭据。
+`compose.production.yaml`、`infra/nginx/` 和 `infra/deploy/` 包含现有部署的 WireGuard、TLS 入口、systemd 和备份方案。其中生产包装器绑定既定路径并组合 MinIO 配置，应按实际主机、网络和存储调整后使用。
 
-```sh
-docker compose --env-file .env -f infra/compose/compose.yaml -f infra/compose/compose.s3.yaml up -d --wait
-```
+生产覆盖文件使用 `!override`，需要 Docker Compose 2.24.4 或更高版本，并要求配置 `WIREGUARD_BIND_IP` 与 `NGINX_CONFIG_FILE`。
 
-S3 覆盖文件要求 `S3_BUCKET`，并将存储模式设置为 s3。基础配置传递 S3 与可选 AWS 环境变量，不能只填写 `.env` 而遗漏覆盖文件。真实 Compose 本地验证及保留环境见 [docs/deployment-validation.md](docs/deployment-validation.md)。
+对外部署时设置自己的 `SITE_ORIGIN`、安全 Cookie、TLS 及可信代理配置，保持内部 API 不可从公开入口访问。HTML、导航数据和受权限约束的媒体不应被 CDN 长期缓存；如另加缓存，发布、撤稿及权限变化需要配套失效机制。
 
-## 备份与恢复
+具体拓扑、运维路径和历史部署记录见[部署说明](docs/deployment.md)与[生产运维说明](infra/deploy/README.md)。
 
-本地开发配置：停止写作及发布后运行 `pnpm backup`。备份包含 MySQL 一致性转储、原始媒体、保留发布目录/清单和私有配置；保存在 `.local/backups/<timestamp>`。Redis 不作为内容备份。脚本校验备份期间 current 未改变，变化则判定失败并要求重试。
+## 验证
 
-执行真实恢复演练（自动使用最新备份）：
-
-```sh
-node --env-file=.env scripts/restore-drill.mjs
-```
-
-演练将 SQL 导入独立临时 MySQL 数据库，核对内容、修订、发布、账号、评论、文件及其引用表，将媒体与发布文件复制到独立目录，逐文件验证 SHA-256、symlink 目标与 current manifest；随后删除它自行创建的临时数据库，不覆盖正在运行的数据。报告位于 `.local/reports/restore.json`。
-
-开发环境的灾难恢复：先停止 backend/Worker，保留故障现场；在全新 MySQL 实例创建目标数据库，导入 `database.sql`；将 `media/` 和 `published/` 恢复到对应持久目录（保留相对 symlink）；从安全备份恢复 `.env` 并核对权限、存储与域名；启动 backend，确认 `/public/release` 与 `current/manifest.json` 一致，再启动 Worker/Nginx。旧 Session 可以舍弃并重新登录。
-
-已部署源站使用独立的 `infra/deploy/backup-origin.sh`，固定生产包装器和路径，手动写入 `/srv/hadesd/backups/<UTC时间戳>`；包含私有环境与管理员密码文件，成功校验后才生成 `COMPLETE`。请按 [生产备份与空数据库恢复说明](infra/deploy/README.md) 操作，不修改本地开发备份脚本来混用生产配置，也不要 bootstrap 覆盖恢复的管理员。
-
-附件清理只处理超过 7 天、且没有任何修订或保留版本引用的对象。默认只预览：
-
-```sh
-# 使用同一套环境变量运行；--apply 才会删除符合规则的孤立附件
-pnpm media:cleanup
-pnpm media:cleanup --apply
-```
-
-## 验证与排查
+类型检查与工作区单元测试：
 
 ```sh
 pnpm typecheck
 pnpm test
-pnpm backend:test
-pnpm exec playwright install chromium
-pnpm test:e2e
+# 根 scripts/ 的测试不包含在 pnpm test 中
+node --test scripts/*.test.mjs
 ```
 
-E2E 需要本地 backend/Worker/static server 已启动、管理员已创建，并先运行 `pnpm demo` 建立明确标记的公开示例。发布测试会建立明确标记的验收内容，经真实静态构建执行发布/修订/撤稿/回滚，结束后恢复先前公开版本；验收草稿和审计记录保留在后台，不会假装成作者的正式内容。
+后端测试使用 Testcontainers。确保 Docker 正常运行，并先构建默认的 MinIO 测试镜像：
 
-`pnpm test:fault` 会依次暂时停止本地 `hadesd-local` 的 MySQL、Redis，检查静态阅读、搜索降级及后台拒绝访问，并在 finally 中恢复依赖。只在本地无写作/发布时执行，不与 E2E 同时运行。报告为 `.local/reports/fault-check.json`。
+```sh
+docker compose --env-file .env \
+  -f infra/compose/compose.yaml \
+  -f infra/compose/compose.minio.yaml build minio
+pnpm backend:test
+```
 
-- [实施进度与最终证据](docs/progress.md)
-- [后端实现说明](docs/backend-notes.md)
-- [公开站 v4 实现说明](docs/web-notes.md)；[v3 历史归档](docs/web-v3-notes.md)、[v2 历史归档](docs/web-v2-notes.md)、[v1 历史归档](docs/web-v1-notes.md)
-- [后台实现说明](docs/admin-notes.md)
-- [独立 Docker 部署验收](docs/deployment-validation.md)
-- [首屏体积与 CRT 实测](docs/performance.md)
-- 后端 JUnit 报告：`backend/build/reports/tests/test/index.html`
-- 浏览器报告：`.local/reports/playwright/index.html`
+也可用 `MINIO_TEST_IMAGE` 指定兼容的测试镜像。JUnit 报告生成在 `backend/build/reports/tests/test/index.html`。
 
-启动失败先检查 Java25、Docker健康状态和 `.env` 端口。401 表示需登录，403 需刷新 CSRF 或无权限，409 需处理版本/发布冲突，429 需等待限流窗口。Worker 失败日志只含脱敏摘要；可设置 `HADESD_SNAPSHOT` 为失败任务 `work/<releaseId>/snapshot.json` 的绝对路径，再运行固定 `pnpm --filter @hadesd/web build` 查看编译诊断。切换前失败不会覆盖旧 current。
+端到端测试需要**独立数据库、附件存储和发布目录**，并已完成管理员初始化、前端构建和示例发布；后端、Worker 和 `pnpm serve` 必须保持运行，Playwright 不会自动启动它们。
 
-本地后端启动脚本复制 JAR 至内容哈希命名的运行副本，避免边编译边运行时原 JAR 被覆写而影响延迟类加载。构建新版本后仍需重启后端。
+```sh
+pnpm exec playwright install chromium
+# 仅在上述隔离环境中运行；该变量本身不会创建或隔离数据
+HADESD_ISOLATED_TEST=true pnpm test:e2e
+```
+
+测试会实际创建账户、文稿、附件与评论，并执行发布、修订、撤稿和回滚。部分测试会恢复公开版本，但验收草稿、修订或审计记录可能保留；不要指向正式数据。未设置隔离标识也不代表所有测试都是只读。
+
+浏览器报告位于 `.local/reports/playwright/index.html`，失败轨迹和截图位于 `.local/reports/test-results/`。历史验收数据见 `docs/` 内对应记录，不代表任意新工作区已经通过验证。
+
+## 维护与排查
+
+### 备份与恢复
+
+对使用 `pnpm deps:up` 的本地开发环境，暂停写作、上传、评论变更、删除和发布等写入后运行：
+
+```sh
+pnpm backup
+pnpm restore:drill
+```
+
+备份保存至 `.local/backups/<timestamp>/`，包含 MySQL 转储、媒体、保留的发布目录、私有环境配置及文件校验信息。S3 模式会按数据库引用导出当前对象，需要已构建的后端 JAR、JDK 25 和可达的数据库 / S3 地址；它不备份 MinIO 的全部对象历史或服务配置。
+
+恢复演练将 SQL 导入独立临时数据库，并在独立目录校验媒体、发布文件、符号链接和当前 manifest，不覆盖运行中的数据。结果写入 `.local/reports/restore.json`。
+
+这两个脚本固定使用本地依赖 Compose，不能直接作为全栈 Compose 或生产数据库的备份工具。独立 Docker 安装见[备份与恢复](docs/self-hosting.md#备份与恢复)。已有生产环境使用 `infra/deploy/backup-origin.sh`，完整备份与空数据库恢复步骤见[生产备份说明](infra/deploy/README.md)。Redis 会话可失效后重新登录，正文恢复依赖 MySQL、媒体与发布目录的一致备份。
+
+### 媒体清理与故障演练
+
+```sh
+pnpm media:cleanup          # 仅预览
+pnpm media:cleanup --apply  # 删除满足条件的孤立媒体
+```
+
+该清理命令面向超过 7 天、没有修订或保留版本引用的作者附件。后台媒体库另提供带引用保护的交互式删除；具体规则见[后台资料管理](docs/admin-management.md)。
+
+`pnpm test:fault` 需要已发布的 demo 示例，会临时停止本地依赖 Compose 的 MySQL / Redis，检查静态阅读与动态功能的降级，并在结束时恢复依赖。仅在本地维护窗口执行，不与写作、发布或 E2E 同时运行；报告为 `.local/reports/fault-check.json`。
+
+### 常见问题
+
+| 现象 | 检查方向 |
+| --- | --- |
+| 首页显示等待发布 | 到后台初始化空站或发布内容；确认 Worker 正在运行。单独执行 `pnpm build` 不会生成 `current` 指针 |
+| 后端无法启动 | 检查 JDK 25、数据库 / Redis 健康状态及 `.env`；先执行 `pnpm backend:build` |
+| 修改代码后后端行为未更新 | 重新构建后重启后端；运行脚本使用内容哈希命名的 JAR 副本 |
+| 后台或开发代理无法访问 API | 检查端口占用，保持 `SERVER_PORT` 与 `API_ORIGIN` 一致；开发服务器显式传入代理地址 |
+| `401` / `403` | 检查登录状态、权限、CSRF；本地 HTTP 不应启用安全 Cookie。公开附件也可能因来源检查被拒绝 |
+| `409` | 草稿版本冲突需重新核对修订；`RELEASE_CHANGED` 需刷新公开版本 |
+| `429` | 请求触发限流，等待限流窗口后重试 |
+| 发布停留在队列或构建失败 | 检查 Worker、共享令牌、目录权限与构建日志；切换前失败保留旧版本 |
+| 切换存储后附件缺失 | 核对迁移结果、桶、端点和运行进程的存储配置，不能只修改 `STORAGE_MODE` |
+
+## 文档索引
+
+| 主题 | 文档 |
+| --- | --- |
+| 账号、评论、文件与终端 | [博客交互](docs/blog.md) · [HadesShell](packages/terminal-core/README.md) |
+| 写作与后台管理 | [Markdown 指南](docs/markdown-guide.md) · [后台资料管理](docs/admin-management.md) · [后台实现](docs/admin-notes.md) |
+| 配置与部署 | [自托管部署](docs/self-hosting.md) · [环境变量](docs/configuration.md) · [部署](docs/deployment.md) · [生产备份与恢复](infra/deploy/README.md) |
+| 存储与访问 | [MinIO 与迁移](docs/minio.md) · [媒体访问与缓存](docs/media-delivery.md) |
+| API 与后端 | [接口契约](docs/api-contract.md) · [OpenAPI 3.1](docs/openapi.json) · [后端实现](docs/backend-notes.md) |
+| 视觉与性能 | [CRT 旅程](docs/crt-journey.md) · [前景预览](apps/web/app/effects/three/foreground/README.md) · [性能记录](docs/performance.md) |
+| 设计与历史证据 | [设计决策](docs/decisions.md) · [实施进度](docs/progress.md) · [终端滚动验收](docs/terminal-scroll-validation.md) · [部署验收](docs/deployment-validation.md) |
+
+部分设计文档和验收记录描述的是特定历史版本，阅读时请结合日期与当前源码。
+
+### 重新录制 README 动图
+
+安装工作区依赖、Playwright Chromium 和带 Pillow 的 Python 3 后执行：
+
+```sh
+pnpm exec playwright install chromium
+node scripts/record-terminal-demo.mjs
+```
+
+脚本在独立本地端口启动实际界面，读取 `scripts/fixtures/terminal-demo.snapshot.json` 并提供只读演示响应，无需后端或真实账户。输出覆盖 `docs/assets/terminal-demo.gif`；可用 `DEMO_PORT` 更换端口，`PYTHON` 指定 Python，`DEMO_KEEP_FRAMES=1` 保留临时截图。
+
+## 许可与来源
+
+本仓库使用 [MIT License](LICENSE)。
+
+ASCII 滚筒的圆柱变形与逐格滚动适配自 [Skyworks 的 CylinderPlane](https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx)，相关来源也保留在实现注释和 [CRT 旅程说明](docs/crt-journey.md)中。

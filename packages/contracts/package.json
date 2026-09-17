@@ -1,1 +1,10 @@
-{"name":"@hadesd/contracts","version":"1.0.0","private":true,"type":"module","exports":"./src/index.ts"}
+{
+  "name": "@hadesd/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./site-origin": "./src/site-origin.mjs"
+  }
+}

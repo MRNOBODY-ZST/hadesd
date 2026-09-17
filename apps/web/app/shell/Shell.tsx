@@ -62,7 +62,7 @@ export function Shell({
   );
   return (
     <AccountProvider><ActionsContext value={shared}>
-      <TerminalStage theme={p.theme} level={p.reader ? "off" : p.crt}>
+      <TerminalStage theme={p.theme} level={p.reader ? "off" : p.crt} siteTitle={data.site.title} heroTitle={data.site.heroTitle}>
         <div className={styles.workstation + " terminal-shell"}>
           <a className="skip-link" href="#main-content">
             跳到正文

@@ -29,7 +29,7 @@ public class Problem extends RuntimeException {
 
   public Body body(String requestId) {
     return new Body(
-        "https://hadesd.sh/problems/" + code.toLowerCase(),
+        "urn:hadesd:problem:" + code.toLowerCase(java.util.Locale.ROOT),
         HttpStatus.valueOf(status).getReasonPhrase(),
         status,
         getMessage(),

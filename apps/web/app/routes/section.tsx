@@ -1,6 +1,6 @@
 import type { MetaFunction } from "react-router";
 import { Link, useLoaderData, type LoaderFunctionArgs } from "react-router";
-import { snapshot, publicIndex } from "../snapshot.server";
+import { snapshot, publicIndex, siteOrigin } from "../snapshot.server";
 import { ContentList } from "../reader/ContentList";
 import { Markdown } from "@hadesd/markdown";
 import { pageMeta } from "../meta";
@@ -32,11 +32,12 @@ export function loader({ params }: LoaderFunctionArgs) {
     ),
     links: snapshot.site.links,
     siteTitle: snapshot.site.title,
+    siteOrigin,
   };
 }
 export const meta: MetaFunction<typeof loader> = ({ loaderData: data }) =>
   data
-    ? pageMeta(data.title, data.description, "/" + data.section, data.siteTitle)
+    ? pageMeta(data.title, data.description, "/" + data.section, data.siteTitle, data.siteOrigin)
     : [];
 export default function Section() {
   const { section, title, description, page, items, links } =

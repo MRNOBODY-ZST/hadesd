@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Group, InstancedBufferAttribute, MathUtils, MeshBasicNodeMaterial, PlaneGeometry, type Node } from "three/webgpu";
-import { abs, attribute, float, length, max, step, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { abs, attribute, float, length, max, mix, step, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import { createCurledPanelPosition, type createAsciiFace } from "./asciiFace";
 import { MAC_SCREEN_HANDOFF } from "./screenProjection";
 import type { IntroPhase } from "../timeline";
+import { SIGNAL_PORTAL } from "./foreground/signalPortalMotion";
 
 type Face = ReturnType<typeof createAsciiFace>;
 type Props = {
   width: number; height: number; face: Face; bootMaterial: MeshBasicNodeMaterial;
   progress: MutableRefObject<number>; phaseState: MutableRefObject<IntroPhase>;
+  terminalPortal?: boolean;
 };
 const COUNT = 16, SEGMENT_ANGLE = Math.PI * 2 / COUNT;
 
@@ -32,10 +34,10 @@ function tileMask(transition: Node<"float">) {
  * two exact flat-screen handoffs. The final handoff remains the DOS screen.
  * https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx
  */
-export function AsciiCarousel({ width, height, face, bootMaterial, progress, phaseState }: Props) {
+export function AsciiCarousel({ width, height, face, bootMaterial, progress, phaseState, terminalPortal = false }: Props) {
   const main = useRef<Group>(null);
   const radius = height * COUNT / (Math.PI * 2);
-  const motion = useMemo(() => ({ rotation: uniform(0), first: uniform(0), last: uniform(0) }), []);
+  const motion = useMemo(() => ({ rotation: uniform(0), first: uniform(0), last: uniform(0), portal: uniform(0) }), []);
   const resources = useMemo(() => {
     const plane = createCarouselGeometry(width, height);
     const sides = plane.clone();
@@ -71,7 +73,7 @@ export function AsciiCarousel({ width, height, face, bootMaterial, progress, pha
     loading.transparent = false; loading.depthWrite = true;
     loading.positionNode = position(float(12 * SEGMENT_ANGLE), motion.last);
     const bootColor = bootMaterial.colorNode as Node<"vec4">;
-    loading.colorNode = vec4(bootColor.rgb.mul(bootColor.a).mul(tileMask(motion.last)), 1);
+    loading.colorNode = vec4(mix(bootColor.rgb.mul(bootColor.a), face.colorNode, motion.portal).mul(tileMask(motion.last)), 1);
     return { plane, sides, center, material, sideMaterial, first, loading };
   }, [width, height, radius, face, motion, bootMaterial]);
   useEffect(() => () => {
@@ -82,15 +84,22 @@ export function AsciiCarousel({ width, height, face, bootMaterial, progress, pha
   useFrame(() => {
     const raw = progress.current;
     const visible = phaseState.current === "journey";
-    if (main.current) main.current.visible = visible && raw >= MAC_SCREEN_HANDOFF;
+    if (main.current) main.current.visible = visible && raw >= MAC_SCREEN_HANDOFF
+      && (!terminalPortal || raw < SIGNAL_PORTAL.fillsViewportAt);
     if (!visible) return;
+    motion.portal.value = terminalPortal ? 1 : 0;
+    // Keep scrolling behind the portal until its aperture fully covers the
+    // viewport. Portal tiles use the face instead of returning to the DOS card.
     const roll = MathUtils.smootherstep(raw, MAC_SCREEN_HANDOFF, 1);
     motion.first.value = MathUtils.clamp((raw - MAC_SCREEN_HANDOFF) / .1, 0, 1);
     motion.last.value = 1 - MathUtils.clamp((roll - .96) / .04, 0, 1);
     // A negative group X rotation adds to the (sin θ, cos θ) cylinder angle.
     // At roll=1 the final index12 reaches 2π, exactly the original tangent plane.
     motion.rotation.value = roll * SEGMENT_ANGLE * 4;
-    if (main.current) main.current.rotation.z = -Math.sin(roll * Math.PI) * .15;
+    if (main.current) {
+      main.current.rotation.z = -Math.sin(roll * Math.PI) * .15;
+      main.current.userData.scrollRotation = motion.rotation.value;
+    }
   }, -.5);
 
   return <group name="ascii-screen-carousel" ref={main} visible={false}>

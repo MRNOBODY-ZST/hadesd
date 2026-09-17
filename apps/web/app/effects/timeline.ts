@@ -36,8 +36,8 @@ export function bootSegmentsAt(progress: number) {
 }
 export const bootProgressAt = (elapsed: number) =>
   bootSegmentsAt(elapsed / BOOT_DURATION_MS).gui * 0.8;
-export const phaseForJourney = (progress: number): IntroPhase =>
-  progress >= 1 ? "resume" : progress <= 0 ? "hero" : "journey";
+export const phaseForJourney = (progress: number, signalPortal = false): IntroPhase =>
+  progress >= 1 ? signalPortal ? "reveal" : "resume" : progress <= 0 ? "hero" : "journey";
 export function isTimedPhase(phase: IntroPhase): phase is TimedIntroPhase {
   return ["boot", "pullback", "resume", "penetrate", "reveal"].includes(phase);
 }

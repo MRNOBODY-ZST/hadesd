@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { cp, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeSiteOrigin } from '../../../packages/contracts/src/site-origin.mjs';
 
 export const SAFE_ID = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,79}$/;
 export function validId(id) { if (typeof id !== 'string' || !SAFE_ID.test(id)) throw new Error('Invalid release identifier'); return id; }
@@ -39,6 +40,7 @@ async function walk(folder) {
   return out;
 }
 export async function prepareRelease({root, buildClient, snapshot, origin}) {
+  const base = normalizeSiteOrigin(origin);
   const id=validId(snapshot.releaseId); const routes=snapshotRoutes(snapshot);
   const staging=path.join(root, 'staging', id);
   await mkdir(staging, {recursive:true});
@@ -64,8 +66,6 @@ export async function prepareRelease({root, buildClient, snapshot, origin}) {
     if(bytes>512*1024*1024) throw new Error('Build size limit exceeded');
     if(file.endsWith('.html')) await writeFile(file,secureHtml(await readFile(file,'utf8')));
   }
-  const parsedOrigin=new URL(origin); if(!['https:','http:'].includes(parsedOrigin.protocol)) throw new Error('Invalid site origin');
-  const base=parsedOrigin.origin;
   const sitemap=routes.filter(r=>r!='/404'&&r!='/search').map(route=>`<url><loc>${escapeXml(base+route)}</loc></url>`).join('');
   await writeFile(path.join(site,'sitemap.xml'),`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${sitemap}</urlset>`);
   const items=snapshot.contents.filter(c=>c.type==='POST').slice().sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt)).slice(0,50).map(c=>`<item><title>${escapeXml(c.title)}</title><link>${escapeXml(base+c.route)}</link><guid isPermaLink="false">${escapeXml(c.id)}</guid><pubDate>${new Date(c.publishedAt).toUTCString()}</pubDate><description>${escapeXml(c.summary)}</description></item>`).join('');

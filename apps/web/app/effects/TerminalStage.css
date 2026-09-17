@@ -179,6 +179,13 @@
   display: block;
   white-space: nowrap;
 }
+.stage-hero h1[data-custom-title] {
+  font-size: clamp(28px, 4.8vw, 84px);
+  overflow-wrap: anywhere;
+}
+.stage-hero h1[data-custom-title] .stage-hero-line {
+  white-space: pre-wrap;
+}
 .stage-hero-glyph {
   display: inline-block;
   transform: translate3d(var(--glyph-x, 0px), var(--glyph-y, 0px), 0) rotate(var(--glyph-tilt, 0deg));

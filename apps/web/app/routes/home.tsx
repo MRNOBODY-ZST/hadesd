@@ -2,10 +2,11 @@ import type { MetaFunction } from "react-router";
 import { Link, useRouteLoaderData } from "react-router";
 import type { loader as rootLoader } from "../root";
 import { pageMeta } from "../meta";
-import { snapshot } from "../snapshot.server";
+import { snapshot, siteOrigin } from "../snapshot.server";
 export function loader() {
   return {
     siteTitle: snapshot.site.title,
+    siteOrigin,
     description: snapshot.site.homeText,
   };
 }
@@ -15,6 +16,7 @@ export const meta: MetaFunction<typeof loader> = ({ loaderData: data }) =>
     data?.description ?? "记录研究、工程与思考。",
     "/",
     data?.siteTitle ?? "HADESD",
+    data?.siteOrigin,
   );
 const banner = `██╗  ██╗ █████╗ ██████╗ ███████╗███████╗██████╗
 ██║  ██║██╔══██╗██╔══██╗██╔════╝██╔════╝██╔══██╗
@@ -35,21 +37,22 @@ export default function Home() {
   return (
     <div className="home-page">
       <h1 className="sr-only">{data.site.title}</h1>
-      <pre className="terminal-banner" aria-hidden="true">
-        {banner}
+      <pre className={`terminal-banner${data.site.title === "HADESD" ? "" : " terminal-site-title"}`} aria-hidden="true">
+        {data.site.title === "HADESD" ? banner : data.site.title}
       </pre>
       <p className="terminal-identity">
-        {data.site.introduction || "Hades"}{" "}
+        {data.site.introduction}{" "}
         <span>
-          / {data.site.tagline || "RESEARCH · ENGINEERING · CURIOSITY"}
+          {data.site.tagline && `/ ${data.site.tagline}`}
         </span>
       </p>
+      {data.site.homeText && <p className="terminal-home-text" data-terminal-reveal="2">{data.site.homeText}</p>}
       <p className="terminal-boot-line">
         <span>[ OK ]</span> hadesd.service online{" "}
         <span className="muted">· RELEASE {data.releaseId.slice(0, 8)}</span>
       </p>
       <p className="terminal-echo home-ls">
-        <span>guest@hadesd:~ $</span> ls -la
+        <span>guest@{new URL(data.siteOrigin).hostname}:~ $</span> ls -la
       </p>
       <div className="terminal-files" aria-label="公开文件目录">
         {folders.map(([path, title, type]) => (

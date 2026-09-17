@@ -4,8 +4,11 @@ import type { Page, PublicContent } from "@hadesd/contracts";
 import type { loader as rootLoader } from "../root";
 import { ContentList } from "../reader/ContentList";
 import { pageMeta } from "../meta";
-export const meta = () =>
-  pageMeta("搜索", "在当前公开的记录中寻找线索。", "/search");
+import type { MetaFunction } from "react-router";
+import { snapshot, siteOrigin } from "../snapshot.server";
+export function loader() { return { siteTitle: snapshot.site.title, siteOrigin }; }
+export const meta: MetaFunction<typeof loader> = ({ loaderData: data }) =>
+  pageMeta("搜索", "在当前公开的记录中寻找线索。", "/search", data?.siteTitle, data?.siteOrigin);
 export default function Search() {
   const [params] = useSearchParams();
   const query = params.get("q") ?? "";

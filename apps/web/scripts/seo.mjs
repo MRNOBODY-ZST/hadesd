@@ -1,5 +1,7 @@
 import { readFile, mkdir, writeFile, readdir, rename } from "node:fs/promises";
 import { resolve } from "node:path";
+import { normalizeSiteOrigin } from "../../../packages/contracts/src/site-origin.mjs";
+const origin = normalizeSiteOrigin(process.env.SITE_ORIGIN);
 const dir = resolve(process.env.HADESD_BUILD_DIR || "build", "client");
 const file = process.env.HADESD_SNAPSHOT;
 const snapshot = file
@@ -7,7 +9,7 @@ const snapshot = file
   : {
       releaseId: "empty",
       createdAt: "",
-      site: { title: "HADESD", tagline: "a personal daemon." },
+      site: { title: "我的博客", tagline: "记录与分享" },
       contents: [],
     };
 const esc = (value) =>
@@ -40,23 +42,23 @@ const paths = [
 await mkdir(dir, { recursive: true });
 await writeFile(
   resolve(dir, "sitemap.xml"),
-  `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...new Set(paths)].map((path) => `<url><loc>https://hadesd.sh${esc(path)}</loc></url>`).join("")}</urlset>`,
+  `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...new Set(paths)].map((path) => `<url><loc>${esc(origin + path)}</loc></url>`).join("")}</urlset>`,
 );
 await writeFile(
   resolve(dir, "rss.xml"),
-  `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${esc(snapshot.site.title)}</title><link>https://hadesd.sh</link><description>${esc(snapshot.site.tagline)}</description>${snapshot.contents
+  `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${esc(snapshot.site.title)}</title><link>${esc(origin)}</link><description>${esc(snapshot.site.tagline)}</description>${snapshot.contents
     .filter((c) => c.type === "POST")
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
     .slice(0, 30)
     .map(
       (c) =>
-        `<item><title>${esc(c.title)}</title><link>https://hadesd.sh${esc(c.route)}</link><guid isPermaLink="true">https://hadesd.sh${esc(c.route)}</guid><pubDate>${new Date(c.publishedAt).toUTCString()}</pubDate><description>${esc(c.summary)}</description></item>`,
+        `<item><title>${esc(c.title)}</title><link>${esc(origin + c.route)}</link><guid isPermaLink="true">${esc(origin + c.route)}</guid><pubDate>${new Date(c.publishedAt).toUTCString()}</pubDate><description>${esc(c.summary)}</description></item>`,
     )
     .join("")}</channel></rss>`,
 );
 await writeFile(
   resolve(dir, "robots.txt"),
-  "User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: https://hadesd.sh/sitemap.xml\n",
+  `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: ${origin}/sitemap.xml\n`,
 );
 async function normalizeNames(folder) {
   for (const entry of await readdir(folder, { withFileTypes: true })) {

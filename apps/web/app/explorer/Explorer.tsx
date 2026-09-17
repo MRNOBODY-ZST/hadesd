@@ -20,7 +20,7 @@ export function Explorer() {
         onClick={() => toggle("explorerOpen", false)}
       >
         <NavLink to="/" end className="tree-root">
-          <span>⌄</span> ~/ <span className="muted">hadesd</span>
+          <span>⌄</span> ~/ <span className="muted">{data.site.title}</span>
         </NavLink>
         <div className="tree-branches">
           {[
@@ -82,8 +82,8 @@ export function Explorer() {
       </div>
       <div className="explorer-bottom">
         <span className="tiny-symbol">✳</span>
-        <p>a personal daemon.</p>
-        <small>研究 · 工程 · 思考</small>
+        <p>{data.site.tagline}</p>
+        <small>{data.site.introduction}</small>
         <Link to="/links">LINKS ↗</Link>
         <a href="/rss.xml">RSS ↗</a>
       </div>

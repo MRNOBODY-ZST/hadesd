@@ -6,8 +6,7 @@ import { parseEnv } from 'node:util';
 
 // Extend configuration only. Existing credentials and the active storage mode
 // are preserved so preparing MinIO never switches a running installation.
-export async function configureMinio(root) {
-  const filename = resolve(root, '.env');
+export async function configureMinio(root, filename = resolve(root, '.env')) {
   const source = await readFile(filename, 'utf8');
   const existing = parseEnv(source);
   const secret = () => randomBytes(32).toString('hex');

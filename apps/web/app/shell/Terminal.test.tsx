@@ -222,7 +222,7 @@ it("a delayed route commit cannot hide a newer terminal command", async () => {
     { initialEntries: ["/posts"] },
   );
   render(<RouterProvider router={router} />);
-  fireEvent.click(screen.getByRole("link", { name: "HADESD 首页" }));
+  fireEvent.click(screen.getByRole("link", { name: `${data.site.title} 首页` }));
   await waitFor(() => expect(router.state.navigation.state).toBe("loading"));
   const field = screen.getByRole("textbox", { name: "博客命令" });
   fireEvent.change(field, { target: { value: "help" } });
@@ -236,7 +236,7 @@ it("a delayed route commit cannot hide a newer terminal command", async () => {
     expect(screen.getByText("查看命令与使用示例")).toBeTruthy(),
   );
   expect(screen.getByText("Home file").closest("[hidden]")).toBeNull();
-  fireEvent.click(screen.getByRole("link", { name: "HADESD 首页" }));
+  fireEvent.click(screen.getByRole("link", { name: `${data.site.title} 首页` }));
   await waitFor(() => expect(screen.getByText("Home file")).toBeTruthy());
   router.dispose();
 });
@@ -387,4 +387,15 @@ it("Tab with no candidates stays in the terminal until Escape releases focus", a
   expect((field as HTMLTextAreaElement).value).toBe("no_such_command");
   await user.keyboard("{Escape}"); await user.tab();
   expect(document.activeElement).not.toBe(field);
+});
+
+it("uses the site's name and deployment hostname in the terminal and command output", async () => {
+  const custom: FrozenSite = { ...EMPTY_SNAPSHOT, site: { ...EMPTY_SNAPSHOT.site, title: "林间笔记" }, siteOrigin: "https://notes.example.org" };
+  render(<MemoryRouter><ActionsContext value={{ data: custom, nodes: createVfs([]), cwd: "/", open: vi.fn() }}><Terminal dispatchRef={{ current: null }} /></ActionsContext></MemoryRouter>);
+  expect(screen.getByRole("link", { name: "林间笔记 首页" })).toBeTruthy();
+  const field = screen.getByRole("textbox", { name: "博客命令" });
+  fireEvent.change(field, { target: { value: "hostname" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  await waitFor(() => expect(screen.getByRole("log").textContent).toContain("notes.example.org"));
+  expect(document.querySelector(".prompt")?.textContent).toContain("guest@notes.example.org");
 });

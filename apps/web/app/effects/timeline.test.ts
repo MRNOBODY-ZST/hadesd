@@ -44,6 +44,14 @@ it("normalizes wheels, touch swipes and keyboard travel in both directions", () 
   expect(keyStep("PageUp")).toBe(-0.12);
   expect(keyStep("x")).toBeNull();
 });
+it("keeps signal portals under scroll control until crossing, then continues the terminal reveal", () => {
+  expect(phaseForJourney(0, true)).toBe("hero");
+  expect(phaseForJourney(.52, true)).toBe("journey");
+  expect(phaseForJourney(.999, true)).toBe("journey");
+  expect(phaseForJourney(1, true)).toBe("reveal");
+  expect(nextTimedPhase("reveal")).toBe("terminal");
+  expect(phaseForJourney(1, false)).toBe("resume");
+});
 it("holds a black CRT, scrolls POST, then flashes to GUI before its progress bar begins", () => {
   expect(BOOT_DURATION_MS).toBe(5000);
   expect(BOOT_CRT_WARMUP_MS + BOOT_POST_DURATION_MS + BOOT_GUI_TRANSITION_MS + BOOT_GUI_DURATION_MS).toBe(BOOT_DURATION_MS);

@@ -2,7 +2,7 @@ import type { MetaFunction } from "react-router";
 import { Link, useLoaderData, type LoaderFunctionArgs } from "react-router";
 import { Markdown, MarkdownImage, extractHeadings } from "@hadesd/markdown";
 import { Comments } from "../community/Comments";
-import { snapshot } from "../snapshot.server";
+import { snapshot, siteOrigin } from "../snapshot.server";
 import { pageMeta } from "../meta";
 import { usePreferences } from "../shell/store";
 export function loader({ params }: LoaderFunctionArgs) {
@@ -20,6 +20,7 @@ export function loader({ params }: LoaderFunctionArgs) {
     previous: adjacent(siblings[i - 1]),
     next: adjacent(siblings[i + 1]),
     siteTitle: snapshot.site.title,
+    siteOrigin,
   };
 }
 export const meta: MetaFunction<typeof loader> = ({ loaderData: data }) =>
@@ -29,6 +30,7 @@ export const meta: MetaFunction<typeof loader> = ({ loaderData: data }) =>
         data.content.summary,
         data.content.route,
         data.siteTitle,
+        data.siteOrigin,
       )
     : [];
 export default function Reader() {

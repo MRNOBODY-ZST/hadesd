@@ -795,4 +795,4 @@ export async function execute(
 export type FrozenSite = Pick<
   ReleaseSnapshot,
   "releaseId" | "createdAt" | "site"
-> & { contents: PublicIndex[] };
+> & { contents: PublicIndex[]; siteOrigin?: string };
