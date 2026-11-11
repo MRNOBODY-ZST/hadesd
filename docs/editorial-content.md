@@ -2,7 +2,7 @@
 
 ## 当前公开文章
 
-`content/development/hadesd-story.md` 是《HADESD：一个博客，怎么做成了现在这样？》的源文。它替代原来的架构、终端、发布和自托管四篇文章。旧 Markdown 可从 Git 历史恢复；线上旧稿通过撤稿和回收站保留修订，不永久删除。
+`content/development/hadesd-story.md` 是《我是如何从零开始开发 HADESD 的》的源文。它替代原来的架构、终端、发布和自托管四篇文章。旧 Markdown 可从 Git 历史恢复；线上旧稿通过撤稿和回收站保留修订，不永久删除。
 
 文章按项目实际变化展开，保留少量解释性比喻，不编造私人经历、读者反馈或性能成绩。第一人称只用于用户在开发对话中明确表达的需求、判断和反馈。项目由用户与 Codex 协作完成，正文明确交代这一点。
 
@@ -42,3 +42,5 @@
 node scripts/publish-development.mjs --snapshot .local/editorial/snapshot.json
 HADESD_SNAPSHOT="$PWD/.local/editorial/snapshot.json" pnpm dev:journal
 ```
+
+本次文章沿用八张已发布的过程截图，新增的 `terminal-demo-v1.gif` 是仓库 `docs/assets/terminal-demo.gif` 的原样副本，录制自真实界面，使用示例数据并关闭 GPU CRT。

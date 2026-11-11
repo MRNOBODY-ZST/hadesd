@@ -18,7 +18,7 @@ for (const path of paths) {
   assert(html.includes(`rel="canonical" href="${expected}"`), `Canonical must use journal origin: ${path}`);
   assert(html.includes(`property="og:url" content="${expected}"`), `Open Graph must use journal origin: ${path}`);
 }
-const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".xml": "application/xml" };
+const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".gif": "image/gif", ".woff2": "font/woff2", ".xml": "application/xml" };
 const server = createServer(async (request, response) => {
   try {
     let path = resolve(build, `.${decodeURIComponent(new URL(request.url, "http://localhost").pathname)}`);
@@ -131,7 +131,7 @@ try {
         await picture.scrollIntoViewIfNeeded();
         await expect.poll(() => picture.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
         await picture.evaluate(async img => { await img.decode(); await new Promise(requestAnimationFrame); });
-        await page.screenshot({ path: join(output, `${name}-${article.slug}-${(await picture.getAttribute("src")).split("/").at(-1)}`) });
+        await page.screenshot({ path: join(output, `${name}-${article.slug}-${(await picture.getAttribute("src")).split("/").at(-1)}.png`) });
       }
       await expect(page.locator('.md-image-error')).toHaveCount(0);
       await checkWidth();
