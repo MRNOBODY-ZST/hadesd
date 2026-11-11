@@ -24,7 +24,7 @@
 - `story-ascii-v1.png`：同批字符滚筒截图，原始文件为 `.local/drum-v12/live-4-0.55.png`。
 - `story-journal-v1.png`：本次内容整理后的普通阅读站构建预览，匿名浏览器截图。
 
-图片是实际项目画面，没有用生成图重建历史。原四篇的 SVG / PNG 示意图继续保留，供已有修订和回滚使用；它们不再作为当前文章配图。`scripts/render-development-diagrams.mjs` 只维护这些历史示意图，不会重制截图。
+本轮补充五张原始历史截图：`story-first-home-v1.png`、`story-flight-v1.png`、`story-dos-v1.png`、`story-terminal-history-v1.png` 和 `story-admin-qa-v1.png`，分别来自 `.local/reports/screenshots/` 与 `.local/reports/terminal-blog-v2/`；后台和终端画面均为隔离测试示例。图片是实际项目画面，没有用生成图重建历史。原四篇的 SVG / PNG 示意图继续保留，供已有修订和回滚使用；它们不再作为当前文章配图。`scripts/render-development-diagrams.mjs` 只维护这些历史示意图，不会重制截图。
 
 两个前端共用的构建步骤将图片复制到 `/editorial/`。更新已发布图片时使用新文件名，保留旧文件。正文使用替代文字与原图入口。
 
