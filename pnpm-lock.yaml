@@ -75,6 +75,9 @@ importers:
       '@hadesd/markdown':
         specifier: workspace:*
         version: link:../../packages/markdown
+      '@hadesd/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       isbot:
         specifier: 5.2.2
         version: 5.2.2

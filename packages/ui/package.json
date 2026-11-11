@@ -1,6 +1,7 @@
 {
   "name": "@hadesd/ui",
   "exports": {
+    "./daily-favicon": "./src/DailyFavicon.tsx",
     ".": "./src/index.tsx",
     "./tokens.css": "./src/tokens.css",
     "./crt.css": "./src/crt.css"

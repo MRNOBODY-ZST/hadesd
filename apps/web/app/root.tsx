@@ -9,6 +9,7 @@ import {
   type LinksFunction,
 } from "react-router";
 import type { ReactNode } from "react";
+import { DailyFavicon } from "@hadesd/ui/daily-favicon";
 import { snapshot, publicIndex, siteOrigin } from "./snapshot.server";
 import { Shell } from "./shell/Shell";
 import "@hadesd/ui/tokens.css";
@@ -24,7 +25,6 @@ export function loader() {
   };
 }
 export const links: LinksFunction = () => [
-  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
   {
     rel: "alternate",
     type: "application/rss+xml",
@@ -40,6 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#11130f" />
         <Meta />
+        <DailyFavicon />
         <Links />
       </head>
       <body>

@@ -1,13 +1,14 @@
 import { Links, Meta, Outlet, Scripts, ScrollRestoration, useLoaderData, isRouteErrorResponse, type LinksFunction } from "react-router";
 import type { ReactNode } from "react";
+import { DailyFavicon } from "@hadesd/ui/daily-favicon";
 import { snapshot, publicIndex, siteOrigin } from "./snapshot.server";
 import { SiteShell } from "./components/SiteShell";
 import { AccountProvider } from "./community/Account";
 import "./journal.css";
 export function loader() { return { site: snapshot.site, contents: publicIndex, releaseId: snapshot.releaseId, siteOrigin }; }
-export const links: LinksFunction = () => [{ rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }, { rel: "alternate", type: "application/rss+xml", title: "HADES Journal RSS", href: "/rss.xml" }];
+export const links: LinksFunction = () => [{ rel: "alternate", type: "application/rss+xml", title: "HADES Journal RSS", href: "/rss.xml" }];
 export function Layout({ children }: { children: ReactNode }) {
-  return <html lang="zh-CN"><head><meta charSet="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="theme-color" content="#fafafc" /><Meta /><Links /></head>
+  return <html lang="zh-CN"><head><meta charSet="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="theme-color" content="#fafafc" /><Meta /><DailyFavicon /><Links /></head>
     <body>{children}<ScrollRestoration /><Scripts /></body></html>;
 }
 export default function Root() { const data = useLoaderData<typeof loader>(); return <AccountProvider><SiteShell data={data}><Outlet /></SiteShell></AccountProvider>; }
