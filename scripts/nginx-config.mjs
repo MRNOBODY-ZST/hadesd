@@ -14,6 +14,7 @@ function renderServer(source, siteOrigin, trustedProxyCidrs = '') {
   // Preserve the browser's outer HTTPS URL for relative redirects and keep CDN
   // transformations from invalidating the publisher's script-hash CSP.
   source=source.replace('server {','server {\n    absolute_redirect off;')
+    .replace('valid_referers none server_names localhost 127.0.0.1;', `valid_referers none ${origin.hostname};`)
     .replace('no-cache, must-revalidate','no-cache, must-revalidate, no-transform')
     .replace('Cache-Control "no-store"','Cache-Control "no-store, no-transform"');
   const trustedProxies = parseTrustedProxies(trustedProxyCidrs);
