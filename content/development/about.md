@@ -8,7 +8,7 @@ tags: []
 
 这是 Hades 的博客。HADESD 从一台个人工作站的设想开始，逐渐做出了复古终端、写作后台和普通阅读界面。
 
-[HADESD：一个博客，怎么做成了现在这样？](/posts/hadesd-from-an-idea-to-this-blog) 记录了这段过程，依据开发对话、提交记录和实际页面整理。
+[我是如何从零开始开发 HADESD 的](/posts/hadesd-from-an-idea-to-this-blog) 记录了这段过程，依据开发对话、提交记录和实际页面整理。
 
 ## 两种阅读方式
 
