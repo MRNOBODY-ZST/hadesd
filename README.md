@@ -197,14 +197,14 @@ pnpm serve
 
 首次启动没有 `current` 发布版本，公开入口会显示等待发布。登录后台后，可在发布页面初始化空站点，或创建内容并发布。`pnpm build` 只生成构建产物，实际公开站由 Worker 发布。
 
-仓库附带四篇介绍本博客研发过程的文章，以及「关于」「近况」页面。先查看导入计划，核对目标站点后再写入：
+仓库附带一篇从最初设想讲到双前端上线的项目回顾，以及「关于」「近况」页面。先查看导入计划，核对目标站点后再写入：
 
 ```sh
 node --env-file=.env scripts/publish-development.mjs
 node --env-file=.env scripts/publish-development.mjs --apply
 ```
 
-内容源文位于 [content/development](content/development/README.md)。导入器先保存私有内容备份，再通过正常 API 创建修订和发布。只有显式指定 `--replace-demo` / `--archive-qa` 才会撤稿并归档原演示文章或已知验收草稿。旧的 `pnpm demo` 仍供隔离测试使用，不需要在正式博客运行。
+内容源文位于 [content/development](content/development/README.md)。导入器先保存私有内容备份，再通过正常 API 创建修订和发布。显式指定 `--replace-demo` / `--archive-qa` 才会归档原演示文章或已知验收草稿；`--replace-development-series` 则用于把旧版四篇研发说明替换为这篇回顾，先发布新文再撤稿归档旧文。旧的 `pnpm demo` 仍供隔离测试使用，不需要在正式博客运行。
 
 ### 热更新
 
@@ -461,4 +461,4 @@ ASCII 滚筒的圆柱变形与逐格滚动适配自 [Skyworks 的 CylinderPlane]
 
 ### 阅读站文案与内容来源
 
-阅读站身份与首页说明在 `apps/journal/app/site.ts`；文章和固定页仍由共享内容系统提供。首页按真实文章生成列表，不需要为版式补齐专题或封面。四篇研发文章从实际问题解释实现，附有架构、渲染、发布与备份示意图；关于与近况源文只使用可核实的站点信息。来源区分、配图维护和替换注意事项见[内容编辑说明](docs/editorial-content.md)。
+阅读站身份与首页说明在 `apps/journal/app/site.ts`；文章和固定页仍由共享内容系统提供。首页按真实文章生成列表，不需要为版式补齐专题或封面。项目回顾依据真实开发对话与提交，配有历史界面和当前阅读站截图；关于与近况源文同步介绍现有内容。来源区分、配图维护和替换注意事项见[内容编辑说明](docs/editorial-content.md)。

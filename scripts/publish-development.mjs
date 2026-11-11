@@ -8,7 +8,8 @@ import { parseArgs } from 'node:util';
 import { Session } from './api-session.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-export const files = ['01-architecture.md', '02-terminal-crt.md', '03-atomic-publishing.md', '04-self-hosting-validation.md', 'about.md', 'now.md'];
+export const files = ['hadesd-story.md', 'about.md', 'now.md'];
+export const retiredDevelopmentSlugs = new Set(['building-hadesd-architecture', 'building-hadesd-terminal-crt', 'building-hadesd-atomic-publishing', 'building-hadesd-self-hosting-validation']);
 export const demoSlugs = new Set(['welcome-to-hadesd', 'two-ways-one-story', 'time-and-backpressure', 'hadesd-demo']);
 export function isQaDraft(content) {
   const { slug, title } = content.latestRevision;
@@ -49,10 +50,10 @@ export function editorialSettings(current = {}) {
   return {
     ...current,
     title: current.title || 'HADESD',
-    tagline: 'HADESD 博客研发笔记。',
+    tagline: 'HADESD 的开发记录。',
     introduction: 'Hades',
-    homeText: '介绍这个博客的架构、浏览器终端、静态发布与自托管。',
-    navigation: [{ label: '研发手记', href: '/posts' }, { label: '关于', href: '/about' }, { label: '近况', href: '/now' }, { label: '源码', href: '/links' }],
+    homeText: '从最初的设想到现在的两个阅读入口，记录这个博客是怎样做出来的。',
+    navigation: [{ label: '文章', href: '/posts' }, { label: '关于', href: '/about' }, { label: '近况', href: '/now' }, { label: '源码', href: '/links' }],
     links: [{ label: 'HADESD · GitHub', url: 'https://github.com/MRNOBODY-ZST/hadesd', description: '博客源码、部署文档与开发记录。' }],
   };
 }
@@ -85,7 +86,7 @@ function sameRevision(a, b) {
 }
 
 // `backup` must finish before the first mutation; tests inject a private store.
-export async function publishDevelopment({ session, articles, replaceDemo = false, archiveQa = false, apply = false, backup, log = console.log }) {
+export async function publishDevelopment({ session, articles, replaceDemo = false, archiveQa = false, replaceSeries = false, apply = false, backup, log = console.log }) {
   const before = await session.request('/public/release');
   const releaseQuery = before.releaseId ? `?releaseId=${encodeURIComponent(before.releaseId)}` : '';
   const publicSite = await session.request(`/public/site${releaseQuery}`);
@@ -99,7 +100,10 @@ export async function publishDevelopment({ session, articles, replaceDemo = fals
     const published = online.find(c => c.id === existing?.id);
     return { article, existing, action: !existing ? 'create' : sameRevision(existing.latestRevision, article) ? 'reuse' : 'revise', needsPublish: !existing || !sameRevision(existing.latestRevision, article) || published?.revisionId !== existing.latestRevision.id };
   });
-  const obsolete = active.filter(c => replaceDemo && demoSlugs.has(c.latestRevision.slug) || archiveQa && isQaDraft(c));
+  const obsolete = active.filter(c =>
+    replaceDemo && demoSlugs.has(c.latestRevision.slug) ||
+    archiveQa && isQaDraft(c) ||
+    replaceSeries && c.type === 'POST' && retiredDevelopmentSlugs.has(c.latestRevision.slug));
   log(JSON.stringify({ origin: session.origin, apply, articles: plan.map(({ article, action, needsPublish }) => ({ slug: article.slug, action, needsPublish })), archive: obsolete.map(c => ({ id: c.id, title: c.latestRevision.title })), preservedOtherDrafts: active.filter(c => !obsolete.includes(c) && !plan.some(p => p.existing?.id === c.id)).length }, null, 2));
   if (!apply) return { applied: false, plan };
   assert(backup, 'A private backup store is required before applying');
@@ -116,7 +120,7 @@ export async function publishDevelopment({ session, articles, replaceDemo = fals
   const settingsChanged = JSON.stringify(settings) !== JSON.stringify(desiredSettings);
   if (settingsChanged) await session.request('/admin/settings', { method: 'PUT', body: desiredSettings });
   let publishedAny = false;
-  for (const item of [...plan].reverse()) {
+  for (const item of plan) {
     let content = item.existing;
     if (!content) content = await session.request('/admin/contents', { method: 'POST', body: item.article });
     else if (item.action === 'revise') content = await session.request(`/admin/contents/${content.id}/revisions`, { method: 'POST', body: { ...item.article, version: content.version } });
@@ -137,18 +141,19 @@ export async function publishDevelopment({ session, articles, replaceDemo = fals
   const result = await collect(session, '/public/contents');
   for (const article of articles) assert(result.some(c => c.type === article.type && c.slug === article.slug && sameRevision(c, article)), `Published content mismatch: ${article.slug}`);
   if (replaceDemo) assert(!result.some(c => demoSlugs.has(c.slug)), 'Legacy demo content is still public');
+  if (replaceSeries) assert(!result.some(c => c.type === 'POST' && retiredDevelopmentSlugs.has(c.slug)), 'Retired development series is still public');
   return { applied: true, release: await session.request('/public/release'), count: result.length };
 }
 
 async function cli() {
-  const { values } = parseArgs({ options: { apply: { type: 'boolean' }, 'replace-demo': { type: 'boolean' }, 'archive-qa': { type: 'boolean' }, snapshot: { type: 'string' }, help: { type: 'boolean' } }, strict: true });
+  const { values } = parseArgs({ options: { apply: { type: 'boolean' }, 'replace-demo': { type: 'boolean' }, 'archive-qa': { type: 'boolean' }, 'replace-development-series': { type: 'boolean' }, snapshot: { type: 'string' }, help: { type: 'boolean' } }, strict: true });
   if (values.help) {
-    console.log('Usage: node [--env-file=PRIVATE_ENV] scripts/publish-development.mjs [--apply] [--replace-demo] [--archive-qa]\n       node scripts/publish-development.mjs --snapshot .local/development/snapshot.json\nDefault: read-only authenticated plan. --apply backs up content/settings/revisions under .local/backups before publishing.\n--replace-demo archives only the four original demo slugs after all replacements publish; no permanent deletion.\n--archive-qa also archives known QA drafts matching both their generated slug and exact test title.\nSet API_ORIGIN, ADMIN_BOOTSTRAP_USERNAME and ADMIN_BOOTSTRAP_PASSWORD_FILE for the intended site.');
+    console.log('Usage: node [--env-file=PRIVATE_ENV] scripts/publish-development.mjs [--apply] [--replace-demo] [--archive-qa] [--replace-development-series]\n       node scripts/publish-development.mjs --snapshot .local/development/snapshot.json\nDefault: read-only authenticated plan. --apply backs up content/settings/revisions under .local/backups before publishing.\n--replace-demo archives only the four original demo slugs after all replacements publish; no permanent deletion.\n--archive-qa also archives known QA drafts matching both their generated slug and exact test title.\n--replace-development-series withdraws only the four retired development POST slugs after replacements publish, then moves them to trash.\nSet API_ORIGIN, ADMIN_BOOTSTRAP_USERNAME and ADMIN_BOOTSTRAP_PASSWORD_FILE for the intended site.');
     return;
   }
   const articles = await readArticles();
   if (values.snapshot) {
-    assert(!values.apply && !values['replace-demo'] && !values['archive-qa'], '--snapshot cannot be combined with publication');
+    assert(!values.apply && !values['replace-demo'] && !values['archive-qa'] && !values['replace-development-series'], '--snapshot cannot be combined with publication');
     const target = resolve(values.snapshot);
     const local = relative(resolve(root, '.local'), target);
     assert(local && local !== '..' && !local.startsWith(`..${sep}`) && !local.startsWith(sep), 'Preview snapshot must be under checkout .local');
@@ -160,7 +165,7 @@ async function cli() {
   assert(process.env.API_ORIGIN, 'Set API_ORIGIN explicitly to the intended site');
   const session = new Session();
   await session.login();
-  const result = await publishDevelopment({ session, articles, apply: values.apply, replaceDemo: values['replace-demo'], archiveQa: values['archive-qa'], backup: async data => {
+  const result = await publishDevelopment({ session, articles, apply: values.apply, replaceDemo: values['replace-demo'], archiveQa: values['archive-qa'], replaceSeries: values['replace-development-series'], backup: async data => {
     const destination = resolve(root, '.local/backups', `editorial-${new Date().toISOString().replaceAll(':', '-')}`);
     await mkdir(destination, { recursive: true, mode: 0o700 });
     await writeFile(resolve(destination, 'content-backup.json'), JSON.stringify(data, null, 2), { mode: 0o600, flag: 'wx' });

@@ -103,3 +103,31 @@ test('QA cleanup requires both the known test slug and exact test title', () => 
   assert(!isQaDraft({ ...qa, latestRevision: { ...qa.latestRevision, title: '真实文章' } }));
   assert(!isQaDraft({ ...qa, latestRevision: { ...qa.latestRevision, slug: 'my-qa-mouse' } }));
 });
+
+test('series retirement requires an explicit flag and only matches retired POST slugs', async () => {
+  const env = fixture();
+  env.state.contents[0] = { ...legacy, latestRevision: { ...legacy.latestRevision, slug: 'building-hadesd-architecture' } };
+  env.state.online[0].slug = 'building-hadesd-architecture';
+  const plan = await publishDevelopment({ ...env, articles: [article], replaceSeries: true });
+  assert.equal(plan.applied, false);
+  assert.deepEqual(env.state.events, []);
+  await publishDevelopment({ ...env, articles: [article], apply: true });
+  assert(env.state.contents.some(c => c.id === 'old'));
+  const second = fixture();
+  second.state.contents[0] = { ...legacy, latestRevision: { ...legacy.latestRevision, slug: 'building-hadesd-architecture' } };
+  second.state.online[0].slug = 'building-hadesd-architecture';
+  await publishDevelopment({ ...second, articles: [article], apply: true, replaceSeries: true });
+  assert.deepEqual(second.state.events, ['BACKUP', 'POST /admin/contents', 'PUBLISH', 'WITHDRAW', 'DELETE /admin/contents/old?version=2']);
+  const page = fixture();
+  page.state.contents[0] = { ...legacy, type: 'PAGE', latestRevision: { ...legacy.latestRevision, slug: 'building-hadesd-architecture' } };
+  await publishDevelopment({ ...page, articles: [article], apply: true, replaceSeries: true });
+  assert(!page.state.events.includes('WITHDRAW'));
+});
+
+test('failed story publication keeps the retired series available', async () => {
+  const env = fixture({ failPublish: true });
+  env.state.contents[0] = { ...legacy, latestRevision: { ...legacy.latestRevision, slug: 'building-hadesd-terminal-crt' } };
+  await assert.rejects(publishDevelopment({ ...env, articles: [article], apply: true, replaceSeries: true }), /Build failed/);
+  assert(!env.state.events.some(event => event === 'WITHDRAW' || event.startsWith('DELETE')));
+  assert(env.state.contents.some(c => c.id === 'old'));
+});

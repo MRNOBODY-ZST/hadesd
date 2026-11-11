@@ -115,7 +115,7 @@ try {
     await page.getByRole("button", { name: "回复", exact: true }).click(); await page.getByRole("textbox", { name: "评论正文" }).fill("继续讨论。"); await page.getByRole("button", { name: "公开发表" }).click(); await expect(page.locator(".comment-list .is-reply")).toHaveCount(1);
     await page.locator(".discussion").scrollIntoViewIfNeeded(); await page.screenshot({ path: join(output, `${name}-comments.png`) }); await checkWidth();
     await page.getByRole("button", { name: "删除", exact: true }).last().click(); await page.getByRole("button", { name: "确认", exact: true }).click(); await expect(page.locator(".comment-list .is-reply")).toHaveCount(0);
-    await page.goto(origin + "/search?q=发布", { waitUntil: "networkidle" }); await expect(page.locator(".result-count")).toContainText("找到 4 条"); await checkWidth(); await page.screenshot({ path: join(output, `${name}-search.png`) });
+    await page.goto(origin + "/search?q=发布", { waitUntil: "networkidle" }); await expect(page.locator(".result-count")).toContainText(`找到 ${fixture.contents.filter(item => item.type === "POST").length} 条`); await checkWidth(); await page.screenshot({ path: join(output, `${name}-search.png`) });
     await page.goto(origin + "/search?q=" + encodeURIComponent("没有匹配项"), { waitUntil: "networkidle" });
     await expect(page.getByText("没有找到相关的文章。", { exact: true })).toBeVisible();
     await page.reload({ waitUntil: "networkidle" }); await expect(page.locator("#search")).toHaveValue("没有匹配项");
@@ -130,7 +130,8 @@ try {
       for (const picture of await pictures.all()) {
         await picture.scrollIntoViewIfNeeded();
         await expect.poll(() => picture.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
-        await page.screenshot({ path: join(output, `${name}-${article.slug}-diagram.png`) });
+        await picture.evaluate(async img => { await img.decode(); await new Promise(requestAnimationFrame); });
+        await page.screenshot({ path: join(output, `${name}-${article.slug}-${(await picture.getAttribute("src")).split("/").at(-1)}`) });
       }
       await expect(page.locator('.md-image-error')).toHaveCount(0);
       await checkWidth();
