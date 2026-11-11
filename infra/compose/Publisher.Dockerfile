@@ -7,6 +7,8 @@ ENV HOME=/home/publisher
 RUN mkdir -p "$HOME" && chown ${APP_UID}:${APP_GID} /app "$HOME"
 COPY --chown=${APP_UID}:${APP_GID} . .
 USER ${APP_UID}:${APP_GID}
-RUN pnpm install --frozen-lockfile
+# Match the worker's CI environment so runtime builds do not attempt an install
+# inside the deliberately isolated private network.
+RUN CI=true pnpm install --frozen-lockfile
 ENV NODE_ENV=production
 CMD ["node", "apps/publisher/src/worker.mjs"]
