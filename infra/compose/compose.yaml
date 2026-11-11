@@ -86,6 +86,7 @@ services:
       WORKER_TOKEN: ${WORKER_TOKEN:?required}
       RELEASE_ROOT: /srv/published
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:18088}
+      JOURNAL_SITE_ORIGIN: ${JOURNAL_SITE_ORIGIN:-}
       WORKER_POLL_MS: 3000
     volumes: ["${RELEASE_ROOT:?run setup}:/srv/published"]
     networks: [private]

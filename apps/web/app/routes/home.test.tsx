@@ -14,4 +14,7 @@ it("renders the publisher's identity and home copy instead of the original autho
   expect(screen.getByText("在这里留下自己的故事。")).toBeTruthy();
   expect(document.querySelector(".terminal-identity")?.textContent).toContain("一个热爱写作的人");
   expect(document.querySelector(".home-ls")?.textContent).toContain("guest@notes.example.org");
+  expect(document.querySelector('a[href="/posts"]')).toBeTruthy();
+  expect(document.querySelector('a[href="/projects"]')).toBeNull();
+  expect(document.querySelector('a[href="/research"]')).toBeNull();
 });

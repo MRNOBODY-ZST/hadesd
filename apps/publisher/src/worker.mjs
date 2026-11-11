@@ -7,6 +7,8 @@ import { normalizeSiteOrigin } from '../../../packages/contracts/src/site-origin
 
 const workspace=path.resolve(import.meta.dirname,'../../..');
 const siteOrigin=normalizeSiteOrigin(process.env.SITE_ORIGIN);
+const journalOrigin=process.env.JOURNAL_SITE_ORIGIN?.trim() ? normalizeSiteOrigin(process.env.JOURNAL_SITE_ORIGIN) : null;
+if(journalOrigin && new URL(journalOrigin).hostname===new URL(siteOrigin).hostname) throw new Error('Journal and terminal origins must use different hostnames');
 const root=path.resolve(process.env.RELEASE_ROOT||path.join(workspace,'.local/published'));
 const api=new URL('/api/v1/internal/',process.env.API_ORIGIN||'http://127.0.0.1:28080');
 const token=process.env.WORKER_TOKEN;
@@ -26,15 +28,15 @@ async function request(relative, method='GET', body) {
   if(!response.ok)throw new Error(`Internal API ${method} ${relative} failed (${response.status})`);
   return response.json();
 }
-function build(snapshotFile,buildDir,signal) {
+function build(packageName,origin,snapshotFile,buildDir,signal) {
   return new Promise((resolve,reject)=>{
     const started=Date.now();
     const heapBudget=buildHeapMb===undefined?'automatic':`${Number(buildHeapMb)} MiB`;
-    console.log(`static build started (Node old-space ${heapBudget})`);
+    console.log(`${packageName} static build started (Node old-space ${heapBudget})`);
     // Fixed command/arguments. Article text, slugs and user input never become executable text.
-    const child=spawn('pnpm',['--filter','@hadesd/web','build'],{
+    const child=spawn('pnpm',['--filter',packageName,'build'],{
       cwd:workspace, shell:false, signal,
-      env:{PATH:process.env.PATH,HOME:process.env.HOME,CI:'true',NODE_ENV:'production',...(buildHeapMb===undefined?{}:{NODE_OPTIONS:`--max-old-space-size=${Number(buildHeapMb)}`}),HADESD_SNAPSHOT:snapshotFile,HADESD_BUILD_DIR:buildDir,SITE_ORIGIN:siteOrigin},
+      env:{PATH:process.env.PATH,HOME:process.env.HOME,CI:'true',NODE_ENV:'production',...(buildHeapMb===undefined?{}:{NODE_OPTIONS:`--max-old-space-size=${Number(buildHeapMb)}`}),HADESD_SNAPSHOT:snapshotFile,HADESD_BUILD_DIR:buildDir,SITE_ORIGIN:origin},
       stdio:['ignore','pipe','pipe']
     });
     // Drain output without retaining or logging article text, private paths or environment values.
@@ -42,12 +44,12 @@ function build(snapshotFile,buildDir,signal) {
     child.once('error',reject);
     child.once('close',(code,exitSignal)=>{
       const diagnostic=`exit ${code??'none'}, signal ${exitSignal??'none'}, Node old-space ${heapBudget}, ${Date.now()-started} ms`;
-      if(code===0) {console.log(`static build completed (${diagnostic})`);resolve();}
+      if(code===0) {console.log(`${packageName} static build completed (${diagnostic})`);resolve();}
       else {
         const hint=code===137||exitSignal==='SIGKILL'
           ? 'check container OOM evidence and PUBLISHER_MEMORY_LIMIT before retrying'
           : 'run the trusted web build locally to inspect diagnostics';
-        reject(new Error(`Static build failed (${diagnostic}); ${hint}`));
+        reject(new Error(`${packageName} static build failed (${diagnostic}); ${hint}`));
       }
     });
   });
@@ -64,8 +66,12 @@ export async function runOnce() {
     const work=path.join(root,'work',id);await mkdir(work,{recursive:true});
     const snapshotFile=path.join(work,'snapshot.json');await writeFile(snapshotFile,JSON.stringify(snapshot),{mode:0o600});
     const buildDir=path.join(work,'build');
-    await build(snapshotFile,buildDir,controller.signal);if(leaseError)throw leaseError;
-    await prepareRelease({root,buildClient:path.join(buildDir,'client'),snapshot,origin:siteOrigin});
+    await build('@hadesd/web',siteOrigin,snapshotFile,buildDir,controller.signal);if(leaseError)throw leaseError;
+    const journalBuildDir=path.join(work,'journal-build');
+    if(journalOrigin) {
+      await build('@hadesd/journal',journalOrigin,snapshotFile,journalBuildDir,controller.signal);if(leaseError)throw leaseError;
+    }
+    await prepareRelease({root,buildClient:path.join(buildDir,'client'),snapshot,origin:siteOrigin,...(journalOrigin ? {journal:{buildClient:path.join(journalBuildDir,'client'),origin:journalOrigin}} : {})});
     console.log(`validated ${id}`);
     await status('READY'); if(leaseError)throw leaseError;
     console.log(`ready ${id}`);

@@ -26,12 +26,12 @@ const banner = `██╗  ██╗ █████╗ ██████╗ �
 ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚══════╝╚═════╝`;
 export default function Home() {
   const data = useRouteLoaderData<typeof rootLoader>("root")!;
-  const folders = [
+  const folders = ([
     ["posts", "文章", "POST"],
     ["projects", "项目", "PROJECT"],
     ["research", "研究", "RESEARCH"],
-  ] as const;
-  const latest = [...data.contents]
+  ] as const).filter(([, , type]) => type === "POST" || data.contents.some(content => content.type === type));
+  const latest = data.contents.filter(content => content.type !== "PAGE")
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
     .slice(0, 2);
   return (

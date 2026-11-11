@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { BlogComment, Media, Page } from "@hadesd/contracts";
 import { TerminalProgram } from "../shell/TerminalProgram";
 import { useAccount, type AccountView } from "./Account";
@@ -9,16 +9,18 @@ export function PageButtons({ data, onPage }: { data: { page: number; size: numb
   return <nav className="community-pagination" aria-label="列表分页"><button type="button" disabled={!data.page} onClick={() => onPage(data.page - 1)}>上一页</button><span>{data.page + 1} / {Math.max(1, Math.ceil(data.total / data.size))} · {data.total} 项</span><button type="button" disabled={(data.page + 1) * data.size >= data.total} onClick={() => onPage(data.page + 1)}>下一页</button></nav>;
 }
 export function MyFiles() {
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [page, setPage] = useState(0), [version, setVersion] = useState(0), [data, setData] = useState<Page<Media> | null>(null);
   const [error, setError] = useState(""), [loadError, setLoadError] = useState(""), [busy, setBusy] = useState(false), [confirmId, setConfirmId] = useState<string | null>(null), [notice, setNotice] = useState("");
   useEffect(() => {
     const controller = new AbortController(); setLoadError(""); setData(null);
-    void community.files(page, controller.signal).then(setData).catch(e => { if (!controller.signal.aborted) setLoadError(errorText(e)); });
+    void community.files(page, controller.signal).then(value => { if (!controller.signal.aborted) setData(value); }).catch(e => { if (!controller.signal.aborted) setLoadError(errorText(e)); });
     return () => controller.abort();
   }, [page, version]);
   async function upload(files: File[]) {
     setBusy(true); setError(""); let completed = 0;
-    try { for (const file of files) { setNotice(`正在上传 ${file.name}…`); await community.upload(file); completed++; } setNotice(`${completed} 个文件已上传。`); }
+    try { for (const file of files) { if (!alive.current) return; setNotice(`正在上传 ${file.name}…`); await community.upload(file); if (!alive.current) return; completed++; } setNotice(`${completed} 个文件已上传。`); }
     catch (e) { setError(errorText(e)); setNotice(completed ? `${completed} 个文件已上传，剩余文件请重试。` : ""); }
     finally { setBusy(false); setPage(0); setVersion(v => v + 1); }
   }
@@ -27,7 +29,7 @@ export function MyFiles() {
     {notice && <p role="status">{notice}</p>}{error && <p className="community-error" role="alert">{error}</p>}
     {loadError && <p className="community-error" role="alert">{loadError}<button onClick={() => setVersion(v => v + 1)}>重试</button></p>}
     {!data && !loadError && <p role="status">读取文件中…</p>}
-    {data?.items.length === 0 && <p>暂无文件。上传图片后，可在评论中选择它。</p>}
+    {data?.items.length === 0 && <p>暂无文件。上传图片后，可在评论中使用它的文件 ID。</p>}
     <ul className="community-files">{data?.items.map(file => <li key={file.id}>
       {file.mime.startsWith("image/") && <a href={fileUrl(file.id)} target="_blank" rel="noreferrer"><img src={fileUrl(file.id)} alt={file.filename} /></a>}
       <div><strong>{file.filename}</strong><small>{fileSize(file.size)} · {file.createdAt.slice(0, 10)}</small><a href={fileUrl(file.id, false, true)} download={file.filename}>下载</a></div>
@@ -37,7 +39,7 @@ export function MyFiles() {
 }
 function MyComments() {
   const [page, setPage] = useState(0), [data, setData] = useState<Page<BlogComment> | null>(null), [error, setError] = useState("");
-  useEffect(() => { const c = new AbortController(); setError(""); setData(null); void community.myComments(page, c.signal).then(setData).catch(e => { if (!c.signal.aborted) setError(errorText(e)); }); return () => c.abort(); }, [page]);
+  useEffect(() => { const c = new AbortController(); setError(""); setData(null); void community.myComments(page, c.signal).then(value => { if (!c.signal.aborted) setData(value); }).catch(e => { if (!c.signal.aborted) setError(errorText(e)); }); return () => c.abort(); }, [page]);
   return <section aria-label="我的评论">{error && <p role="alert" className="community-error">{error}</p>}{!data && !error && <p role="status">读取评论中…</p>}{data?.items.length === 0 && <p>还没有发表过评论。</p>}<ul className="community-files">{data?.items.map(comment => <li key={comment.id}><div><small>{comment.createdAt.slice(0, 19).replace("T", " ")}</small><p className="community-comment-excerpt">{comment.body}</p><span className="community-hint">{comment.attachments.length} 个附件 · {comment.parentId ? "回复" : "评论"}</span></div></li>)}</ul>{data && <PageButtons data={data} onPage={setPage} />}</section>;
 }
 export default function AccountPanel({ initialView, onClose }: { initialView: AccountView; onClose: () => void }) {
@@ -76,7 +78,7 @@ export default function AccountPanel({ initialView, onClose }: { initialView: Ac
       <label>密码<input name="password" type="password" autoComplete={registering ? "new-password" : "current-password"} required minLength={registering ? 12 : 1} value={password} onChange={e => setPassword(e.target.value)} /></label>
       {registering && <><p className="community-hint">至少 12 个字符，最多 72 个 UTF-8 字节。</p><label>确认密码<input name="confirmPassword" type="password" autoComplete="new-password" required value={confirm} onChange={e => setConfirm(e.target.value)} /></label></>}
       <button className="community-primary" type="submit" disabled={busy}>{busy ? "请稍候…" : registering ? "注册并登录" : "登录账户"}</button>
-    </form> : effective === "files" ? <MyFiles /> : effective === "comments" ? <MyComments /> : <>
+    </form> : effective === "files" ? <MyFiles key={user.id} /> : effective === "comments" ? <MyComments key={user.id} /> : <>
       <p className="community-hint">{user.username} · {user.role === "ADMIN" ? "站点管理员" : "读者"}</p>
       {user.role === "ADMIN" ? <p><a href="/admin/">进入写作台 →</a></p> : <>
         <form className="community-form" onSubmit={e => { e.preventDefault(); setBusy(true); setError(""); setNotice(""); void community.profile(displayName).then(value => { setUser(value); setNotice("显示名称已更新。"); }).catch(e => setError(errorText(e))).finally(() => setBusy(false)); }}><label>显示名称<input required maxLength={60} value={displayName} onChange={e => setDisplayName(e.target.value)} /></label><button type="submit" disabled={busy}>保存资料</button></form>

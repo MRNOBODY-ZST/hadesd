@@ -18,10 +18,13 @@ services:
     environment:
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:18088}
   nginx:
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health"]
     image: ${COMPOSE_PROJECT_NAME:-personal-blog}/nginx:local
     build:
       args:
         STANDALONE_SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:18088}
+        JOURNAL_SITE_ORIGIN: ${JOURNAL_SITE_ORIGIN:-}
         TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
     ports: !override
       - target: 8080

@@ -245,7 +245,8 @@ kbd {
   letter-spacing: 0.04em;
 }
 .terminal-banner {
-  font: clamp(7px, 1.25vw, 14px) / 1.08 var(--font-mono);
+  /* Block/box glyphs and spaces must share cells, without prose line leading. */
+  font: clamp(7px, 1.25vw, 14px) / 1 Menlo, Consolas, "Liberation Mono", monospace;
   color: var(--accent);
   margin: 5px 0 18px;
   letter-spacing: 0;
@@ -338,7 +339,7 @@ kbd {
 .terminal-record + .terminal-record {
   margin-top: 22px;
 }
-.terminal-output pre {
+.terminal-output pre:not(.terminal-banner) {
   font: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

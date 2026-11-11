@@ -113,12 +113,11 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
       const q = glassUv.sub(.5);
       // Keep terminal glyphs registered to their native DOM hit targets. The
       // lens rim, scan, highlight and phosphor live on the larger glass plane.
-      const sourceUv = glassUv.sub(contentRect.xy).div(contentRect.zw);
+      const coord = glassUv.sub(contentRect.xy).div(contentRect.zw);
       const distance = length(glassUv.sub(mouse.mul(.5).add(.5)));
-      const touch = sin(distance.mul(43).sub(clock.mul(2.4))).mul(float(1).sub(smoothstep(0, .4, distance))).mul(.0007).mul(intensity);
-      const coord = sourceUv.add(vec2(touch, touch.mul(.45)));
-      const split = vec2(float(.00012).add(abs(q.x).mul(.0007)).mul(intensity), 0);
-      const rgb = vec3(texture(resources.target.texture, coord.add(split)).r, texture(resources.target.texture, coord).g, texture(resources.target.texture, coord.sub(split)).b);
+      // Live text needs one registered RGB sample. Pointer displacement and
+      // per-channel offsets blur small glyphs and detach adjoining ASCII cells.
+      const rgb = texture(resources.target.texture, coord).rgb;
       const scan = sin(coord.y.mul(pixels.y).mul(Math.PI)).mul(.08).mul(intensity).add(float(1).sub(intensity.mul(.065)));
       const mask = sin(coord.x.mul(pixels.x).mul(2.094)).mul(.021).mul(intensity).add(.979);
       const vignette = float(1).sub(smoothstep(.23, .76, length(q)).mul(.22));
@@ -178,7 +177,9 @@ function Display({ surface, theme, level, phaseState, bootProgress, progress, ph
     const scenePass = pass(scene, camera), color = scenePass.getTextureNode("output");
     const glow = bloom(color, .25, .35, .68); glow.setResolutionScale(.3);
     const q = uv().sub(.5), coord = q.mul(q.dot(q).mul(.028).mul(intensity).mul(terminalAlpha.oneMinus()).add(1)).add(.5);
-    const split = vec2(float(.00028).add(burst.mul(.004)).mul(intensity), 0);
+    // Keep chromatic lens effects in the introduction, then converge the
+    // channels before reading. The live terminal must not receive a second split.
+    const split = vec2(float(.00028).add(burst.mul(.004)).mul(intensity).mul(terminalAlpha.oneMinus()), 0);
     const sharp = vec3(color.sample(coord.add(split)).r, color.sample(coord).g, color.sample(coord.sub(split)).b);
     const ray = q.mul(burst.mul(.10));
     const trail = color.sample(coord.sub(ray.mul(.33))).rgb.mul(.44).add(color.sample(coord.sub(ray.mul(.66))).rgb.mul(.33)).add(color.sample(coord.sub(ray)).rgb.mul(.23));

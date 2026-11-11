@@ -9,8 +9,9 @@
   },
   "scripts": {
     "dev:web": "pnpm --filter @hadesd/web dev",
+    "dev:journal": "pnpm --filter @hadesd/journal dev",
     "dev:admin": "pnpm --filter @hadesd/admin dev",
-    "build": "pnpm --filter @hadesd/web build && pnpm --filter @hadesd/admin build",
+    "build": "pnpm --filter @hadesd/web build && pnpm --filter @hadesd/journal build && pnpm --filter @hadesd/admin build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:e2e": "playwright test",

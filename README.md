@@ -4,6 +4,8 @@
 
 HADESD 是一个开源、自托管的博客与内容发布系统。每位使用者可以独立部署自己的站点，在后台配置站点名称、个人介绍、标语、开场标题和链接，并绑定自己的域名。公开站保留复古 Macintosh、CRT 和浏览器终端风格；作者在中文后台写作，读者可以注册、评论和管理个人附件。
 
+公开阅读提供两套独立前端：终端版保留 CRT 氛围；Journal 版采用明亮留白、大标题和常规文章阅读布局，无 CRT 与开机流程。可以将它们分别部署到两个域名，共用一套内容、账号和管理后台。启用双站后，每次发布会校验两套页面并一起切换版本，见[双前端部署](docs/dual-frontends.md)。
+
 正文从冻结快照预渲染为静态页面，账号、搜索、评论与写作操作由 Spring WebFlux 后端处理。保存草稿与公开发布相互独立，发布 Worker 构建整站并原子切换版本。
 
 ![终端演示：输入命令、浏览目录并阅读 Markdown](docs/assets/terminal-demo.gif)
@@ -40,9 +42,9 @@ help                         # 命令列表；man <command> 查看单个命令
 pwd                          # 当前虚拟目录
 ls -la                       # 浏览文件与目录
 cd ~/posts                   # 进入文章目录；cd - 返回上次目录
-open welcome-to-hadesd.md     # 在历史中渲染 Markdown（运行 demo 后可用）
-cat welcome-to-hadesd.md      # 查看完整 Markdown 原文
-vim welcome-to-hadesd.md      # 打开独立 Vim 缓冲区
+open building-hadesd-architecture.md  # 导入研发手记后，在历史中阅读正文
+cat building-hadesd-architecture.md   # 查看完整 Markdown 原文
+vim building-hadesd-architecture.md   # 打开独立 Vim 缓冲区
 search "Reactive"            # 检索当前公开索引的标题、摘要、标签与路径
 login                        # 逐项输入账号信息，密码使用隐藏输入
 files                        # 查看个人文件
@@ -88,6 +90,7 @@ flowchart LR
 | 模块 | 职责与主要技术 |
 | --- | --- |
 | `apps/web` | React 19、React Router 8、Vite、TypeScript；静态预渲染的公开站；Three.js、React Three Fiber、TSL 显示层 |
+| `apps/journal` | 独立的普通博客前端；同一冻结快照与 API，独立排版、页面资源和域名元信息 |
 | `apps/admin` | React + Vite 后台 SPA，TanStack Query 管理请求，Zustand 管理界面状态 |
 | `backend` | Java 25、Spring Boot 4.1.1、WebFlux、R2DBC MySQL、Reactive Redis、Spring Security；Gradle Wrapper 9.7.1 |
 | `apps/publisher` | Node.js Worker，领取任务、执行固定构建入口、校验产物、切换版本与清理过期发布 |
@@ -194,21 +197,25 @@ pnpm serve
 
 首次启动没有 `current` 发布版本，公开入口会显示等待发布。登录后台后，可在发布页面初始化空站点，或创建内容并发布。`pnpm build` 只生成构建产物，实际公开站由 Worker 发布。
 
-需要示例内容时，在上述三个进程运行期间显式执行：
+仓库附带四篇介绍本博客研发过程的文章，以及「关于」「近况」页面。先查看导入计划，核对目标站点后再写入：
 
 ```sh
-pnpm demo
+node --env-file=.env scripts/publish-development.mjs
+node --env-file=.env scripts/publish-development.mjs --apply
 ```
 
-该命令通过真实 API 创建和发布标有「示例」的文章与项目，会写入当前数据库及发布目录。正式使用时可在后台撤稿。
+内容源文位于 [content/development](content/development/README.md)。导入器先保存私有内容备份，再通过正常 API 创建修订和发布。只有显式指定 `--replace-demo` / `--archive-qa` 才会撤稿并归档原演示文章或已知验收草稿。旧的 `pnpm demo` 仍供隔离测试使用，不需要在正式博客运行。
 
 ### 热更新
 
-按需启动开发服务器；同时开发前后台时，分别在两个终端运行：
+按需启动开发服务器；同时开发多个界面时，分别在独立终端运行：
 
 ```sh
 # 公开站热更新，默认 http://127.0.0.1:5173/
 pnpm dev:web
+
+# 阅读站热更新，默认 http://127.0.0.1:5175/
+pnpm dev:journal
 
 # 后台热更新，默认 http://127.0.0.1:5174/admin/
 pnpm dev:admin
@@ -222,7 +229,7 @@ HADESD_SNAPSHOT="$PWD/.local/published/current/snapshot.json" pnpm dev:web
 
 如果修改过 `RELEASE_ROOT`，使用该目录下 `current/snapshot.json` 的实际路径。快照在启动和构建时读取；发布后需要重启开发服务器才能载入新快照。后台开发服务器连接真实后端，保存、上传和发布都会影响所连接的环境。
 
-两个开发服务器默认代理到 `http://127.0.0.1:28080`。若更改后端端口，启动时显式传入 `API_ORIGIN`，例如：
+三个开发服务器默认代理到 `http://127.0.0.1:28080`。若更改后端端口，启动时显式传入 `API_ORIGIN`，例如：
 
 ```sh
 API_ORIGIN=http://127.0.0.1:28081 pnpm dev:admin
@@ -242,7 +249,7 @@ API_ORIGIN=http://127.0.0.1:28081 pnpm dev:admin
 
 | 命令 | 用途 |
 | --- | --- |
-| `pnpm build` | 构建公开站与后台，不切换公开版本 |
+| `pnpm build` | 构建终端站、阅读站与后台，不切换公开版本 |
 | `pnpm backend:build` | 清理并构建后端可执行 JAR；已有进程需另行重启 |
 | `pnpm typecheck` | 执行各工作区包的类型检查 |
 | `pnpm test` | 执行各工作区包的单元测试 |
@@ -269,8 +276,10 @@ API_ORIGIN=http://127.0.0.1:28081 pnpm dev:admin
 ├── releases/<releaseId>/
 │   ├── manifest.json       # 当前公开版本的权威清单
 │   ├── snapshot.json       # 私有冻结快照，不作为公开静态文件提供
-│   └── site/               # HTML、导航数据、RSS、sitemap 等公开产物
+│   ├── site/               # 终端站 HTML、导航数据、RSS、sitemap
+│   └── journal/            # 启用 JOURNAL_SITE_ORIGIN 时的阅读站产物
 ├── assets/                 # 保留带内容哈希的代码资源，支持旧标签页
+├── journal-assets/         # 阅读站独立的哈希资源
 ├── staging/                # 尚未激活的版本
 └── work/                   # 每次发布的构建工作目录
 ```
@@ -424,6 +433,7 @@ pnpm media:cleanup --apply  # 删除满足条件的孤立媒体
 | --- | --- |
 | 账号、评论、文件与终端 | [博客交互](docs/blog.md) · [HadesShell](packages/terminal-core/README.md) |
 | 写作与后台管理 | [Markdown 指南](docs/markdown-guide.md) · [后台资料管理](docs/admin-management.md) · [后台实现](docs/admin-notes.md) |
+| 研发文章与双站 | [研发内容包](content/development/README.md) · [双前端部署](docs/dual-frontends.md) |
 | 配置与部署 | [自托管部署](docs/self-hosting.md) · [环境变量](docs/configuration.md) · [部署](docs/deployment.md) · [生产备份与恢复](infra/deploy/README.md) |
 | 存储与访问 | [MinIO 与迁移](docs/minio.md) · [媒体访问与缓存](docs/media-delivery.md) |
 | API 与后端 | [接口契约](docs/api-contract.md) · [OpenAPI 3.1](docs/openapi.json) · [后端实现](docs/backend-notes.md) |

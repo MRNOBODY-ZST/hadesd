@@ -1,0 +1,19 @@
+# Optional dual-domain frontend overlay for compose.yaml.
+# compose.standalone.yaml already accepts JOURNAL_SITE_ORIGIN without this file.
+# Do not combine with a mounted single-site production nginx config: generate a
+# dual-site config for that deployment instead (see docs/dual-frontends.md).
+services:
+  backend:
+    environment:
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+  publisher:
+    environment:
+      JOURNAL_SITE_ORIGIN: ${JOURNAL_SITE_ORIGIN:?set the journal public origin}
+  nginx:
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health"]
+    build:
+      args:
+        STANDALONE_SITE_ORIGIN: ${SITE_ORIGIN:?set the terminal public origin}
+        JOURNAL_SITE_ORIGIN: ${JOURNAL_SITE_ORIGIN:?set the journal public origin}
+        TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}

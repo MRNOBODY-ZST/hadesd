@@ -39,13 +39,25 @@ async function walk(folder) {
   }
   return out;
 }
-export async function prepareRelease({root, buildClient, snapshot, origin}) {
+function metadataUrl(html, tag, attribute, value, urlAttribute) {
+  for (const match of html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'gi'))) {
+    const attributes=Object.fromEntries([...match[0].matchAll(/([\w:-]+)\s*=\s*["']([^"']*)["']/g)].map(([,key,text])=>[key.toLowerCase(),text.replaceAll('&amp;','&')]));
+    if (attributes[attribute]===value) return attributes[urlAttribute];
+  }
+}
+function validateSeo(html, route, origin) {
+  const expected=new URL(route,origin).href;
+  for (const [tag,attribute,value,urlAttribute] of [['link','rel','canonical','href'],['meta','property','og:url','content']]) {
+    const found=metadataUrl(html,tag,attribute,value,urlAttribute);
+    let valid=false;
+    try { valid=!!found && new URL(found).href===expected; } catch {}
+    if(!valid) throw new Error(`Invalid ${value} metadata for route: ${route}`);
+  }
+}
+async function prepareSite({site, buildClient, snapshot, origin, routes, validateMetadata}) {
   const base = normalizeSiteOrigin(origin);
-  const id=validId(snapshot.releaseId); const routes=snapshotRoutes(snapshot);
-  const staging=path.join(root, 'staging', id);
-  await mkdir(staging, {recursive:true});
-  const site=path.join(staging, 'site');
-  await rm(site,{recursive:true,force:true}); await cp(buildClient,site,{recursive:true});
+  const id=validId(snapshot.releaseId);
+  await cp(buildClient,site,{recursive:true});
   // React Router emits a SPA fallback, but public documents must have real 404s.
   await rm(path.join(site,'__spa-fallback.html'),{force:true});
   for (const route of routes) {
@@ -57,6 +69,7 @@ export async function prepareRelease({root, buildClient, snapshot, origin}) {
     if (!htmlFile) throw new Error(`Missing prerendered route: ${route}`);
     const html=await readFile(htmlFile,'utf8');
     if(!/<html[\s>]/i.test(html)||!/<\/html>/i.test(html)) throw new Error(`Invalid HTML: ${route}`);
+    if(validateMetadata) validateSeo(html,route,base);
   }
   const files=await walk(site);
   if(files.length>25000) throw new Error('Build artifact limit exceeded');
@@ -72,9 +85,32 @@ export async function prepareRelease({root, buildClient, snapshot, origin}) {
   await writeFile(path.join(site,'rss.xml'),`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${escapeXml(snapshot.site.title)}</title><link>${escapeXml(base)}</link><description>${escapeXml(snapshot.site.tagline)}</description>${items}</channel></rss>`);
   await writeFile(path.join(site,'robots.txt'),`User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: ${base}/sitemap.xml\n`);
   await writeFile(path.join(site,'release.json'),JSON.stringify({releaseId:id,createdAt:snapshot.createdAt}));
-  await writeFile(path.join(staging,'snapshot.json'),JSON.stringify(snapshot),{mode:0o600});
-  await writeFile(path.join(staging,'manifest.json'),JSON.stringify({releaseId:id,createdAt:snapshot.createdAt,routes,artifactBytes:bytes}));
-  return {staging, routes, bytes};
+  return bytes;
+}
+export async function prepareRelease({root, buildClient, snapshot, origin, journal}) {
+  const base=normalizeSiteOrigin(origin);
+  const journalOrigin=journal ? normalizeSiteOrigin(journal.origin) : null;
+  if(journalOrigin && new URL(journalOrigin).hostname===new URL(base).hostname) throw new Error('Journal and terminal origins must use different hostnames');
+  const id=validId(snapshot.releaseId), routes=snapshotRoutes(snapshot);
+  const staging=path.join(root,'staging',id);
+  // A retry may replace incomplete staging, never a published immutable release.
+  await rm(staging,{recursive:true,force:true});
+  await mkdir(staging,{recursive:true});
+  try {
+    const sites={site:{origin:base,assetDirectory:'assets'}};
+    let bytes=await prepareSite({site:path.join(staging,'site'),buildClient,snapshot,origin:base,routes,validateMetadata:!!journal});
+    if(journal) {
+      bytes+=await prepareSite({site:path.join(staging,'journal'),buildClient:journal.buildClient,snapshot,origin:journalOrigin,routes,validateMetadata:true});
+      sites.journal={origin:journalOrigin,assetDirectory:'journal-assets'};
+    }
+    await writeFile(path.join(staging,'snapshot.json'),JSON.stringify(snapshot),{mode:0o600});
+    // This completion marker is written only after every frontend is validated.
+    await writeFile(path.join(staging,'manifest.json'),JSON.stringify({releaseId:id,createdAt:snapshot.createdAt,routes,artifactBytes:bytes,sites}));
+    return {staging,routes,bytes};
+  } catch(error) {
+    await rm(staging,{recursive:true,force:true});
+    throw error;
+  }
 }
 export async function currentRelease(root) {
   try { const manifest=JSON.parse(await readFile(path.join(root,'current','manifest.json'),'utf8'));return validId(manifest.releaseId); }
@@ -85,13 +121,20 @@ export async function activateRelease(root, id) {
   const releases=path.join(root,'releases'); await mkdir(releases,{recursive:true});
   const target=path.join(releases,id); const staging=path.join(root,'staging',id);
   // Re-running after a completed rename is safe. An immutable release is never overwritten.
-  try { await stat(target); } catch(error) { if(error.code!=='ENOENT')throw error; await rename(staging,target); }
+  try { await stat(target); } catch(error) {
+    if(error.code!=='ENOENT')throw error;
+    const prepared=JSON.parse(await readFile(path.join(staging,'manifest.json'),'utf8'));
+    if(prepared.releaseId!==id) throw new Error('Manifest identity mismatch');
+    await rename(staging,target);
+  }
   const manifest=JSON.parse(await readFile(path.join(target,'manifest.json'),'utf8'));
   if(manifest.releaseId!==id) throw new Error('Manifest identity mismatch');
   const canonical=await realpath(target); if(!canonical.startsWith((await realpath(releases))+path.sep))throw new Error('Invalid release target');
   // Keep hashed executable resources for already open browser tabs. Never copy content data.
-  const assets=path.join(target,'site','assets');
-  try { await cp(assets,path.join(root,'assets'),{recursive:true,force:false}); } catch(error) { if(error.code!=='ENOENT')throw error; }
+  for(const [site,directory] of [['site','assets'],...(manifest.sites?.journal ? [['journal','journal-assets']] : [])]) {
+    const assets=path.join(target,site,directory);
+    try { await cp(assets,path.join(root,directory),{recursive:true,force:false}); } catch(error) { if(error.code!=='ENOENT')throw error; }
+  }
   const temporary=path.join(root,`.current-${randomUUID()}`);
   await symlink(path.join('releases',id),temporary,'dir');
   await rename(temporary,path.join(root,'current'));
