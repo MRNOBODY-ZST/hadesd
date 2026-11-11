@@ -13,5 +13,5 @@ export function Layout({ children }: { children: ReactNode }) {
 export default function Root() { const data = useLoaderData<typeof loader>(); return <AccountProvider><SiteShell data={data}><Outlet /></SiteShell></AccountProvider>; }
 export function ErrorBoundary({ error }: { error: unknown }) {
   const notFound = isRouteErrorResponse(error) && error.status === 404;
-  return <main className="standalone-error"><a className="wordmark" href="/">HADES <span>/ JOURNAL</span></a><p className="eyebrow">{notFound ? "404 / NOT FOUND" : "SOMETHING WENT WRONG"}</p><h1>{notFound ? "这页，还没有写下。" : "稍等，让思路重新连接。"}</h1><p>{notFound ? "地址可能已更新，或文章尚未公开。" : "页面暂时无法打开，请重新加载后再试。"}</p><a className="pill-button" href="/">返回首页 →</a></main>;
+  return <main className="standalone-error"><a className="wordmark" href="/">HADES <span>/ JOURNAL</span></a><p className="eyebrow">{notFound ? "404 / NOT FOUND" : "加载失败"}</p><h1>{notFound ? "页面不存在" : "页面暂时无法打开"}</h1><p>{notFound ? "地址可能已更新，或文章尚未公开。" : "页面暂时无法打开，请重新加载后再试。"}</p><a className="pill-button" href="/">返回首页 →</a></main>;
 }

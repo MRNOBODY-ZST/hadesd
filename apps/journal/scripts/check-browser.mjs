@@ -10,7 +10,7 @@ import { chromium, expect } from "@playwright/test";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const build = resolve(process.env.HADESD_BUILD_DIR || join(root, ".local/journal-build"), "client");
 const fixture = JSON.parse(await readFile(process.env.HADESD_SNAPSHOT || join(root, ".local/development/snapshot.json"), "utf8"));
-const output = join(root, ".local/reports/journal");
+const output = resolve(process.env.REPORT_DIR || join(root, ".local/reports/journal"));
 await mkdir(output, { recursive: true });
 const paths = [...new Set(["/", "/posts", "/projects", "/research", "/about", "/now", "/links", "/search", "/404", ...fixture.contents.map(item => item.route), ...fixture.contents.flatMap(item => item.tags.map(tag => `/tags/${encodeURIComponent(tag)}`))])];
 for (const path of paths) {
@@ -18,7 +18,7 @@ for (const path of paths) {
   assert(html.includes(`rel="canonical" href="${expected}"`), `Canonical must use journal origin: ${path}`);
   assert(html.includes(`property="og:url" content="${expected}"`), `Open Graph must use journal origin: ${path}`);
 }
-const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".xml": "application/xml" };
+const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".xml": "application/xml" };
 const server = createServer(async (request, response) => {
   try {
     let path = resolve(build, `.${decodeURIComponent(new URL(request.url, "http://localhost").pathname)}`);
@@ -46,7 +46,7 @@ async function checkContrast(page, selectors) {
   contrastResults.push(...results);
 }
 try {
-  for (const device of [{ name: "desktop", viewport: { width: 1440, height: 1000 } }, { name: "mobile", viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }]) {
+  for (const device of [{ name: "desktop", viewport: { width: 1440, height: 1000 } }, { name: "tablet", viewport: { width: 768, height: 1024 } }, { name: "mobile", viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }]) {
     const { name, ...options } = device;
     const context = await browser.newContext({ ...options, locale: "zh-CN", reducedMotion: "reduce", serviceWorkers: "block" });
     let user = null, comments = [], writes = [];
@@ -67,6 +67,7 @@ try {
       if (path === "/account/profile") { user = { ...user, displayName: request.postDataJSON().displayName }; return ok(user); }
       if (path === "/account/files") return ok({ items: [], total: 0, page: 0, size: 10 });
       if (path === "/account/comments") return ok({ items: comments, total: comments.length, page: 0, size: 10 });
+      if (path === "/public/search" && url.searchParams.get("q") === "没有匹配项") return ok({ items: [], total: 0, page: 0, size: 20 });
       if (path === "/public/search") return ok({ items: fixture.contents.filter(item => item.type === "POST"), total: fixture.contents.filter(item => item.type === "POST").length, page: 0, size: 20 });
       if (path.endsWith("/comments") && path.startsWith("/public/contents/")) {
         if (method === "POST") { const item = { id: `comment-${comments.length + 1}`, contentId: first.id, ...request.postDataJSON(), author: user, attachments: [], createdAt: "2026-11-11T00:00:00Z", updatedAt: "2026-11-11T00:00:00Z" }; comments.push(item); return ok(item); }
@@ -83,8 +84,8 @@ try {
     page.on("pageerror", error => errors.push(error.message));
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
     const checkWidth = async () => assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name}: horizontal overflow at ${page.url()}`);
-    await page.goto(origin, { waitUntil: "networkidle" }); await expect(page.locator("h1")).toContainText("好想法"); await checkWidth();
-    await checkContrast(page, [".campaign-announcement", ".campaign-copy>p", ".campaign-copy h1", ".campaign-subtitle", ".campaign-button", ".campaign-text-link", ".feature-subtitle", ".showcase-article-title", ".footer-top p", ".footer-bottom"]);
+    await page.goto(origin, { waitUntil: "networkidle" }); await expect(page.locator("h1")).toHaveText("Hades"); await checkWidth();
+    await checkContrast(page, [".journal-intro p", ".journal-intro .pill-button", ".post-meta", ".footer-bottom"]);
     await page.screenshot({ path: join(output, `${name}-home.png`) });
     await page.screenshot({ path: join(output, `${name}-home-full.png`), fullPage: true });
     console.log(`Screenshot: ${join(output, `${name}-home.png`)}`);
@@ -102,6 +103,7 @@ try {
     await page.getByRole("button", { name: "关闭账户" }).click();
     await page.goto(origin + first.route, { waitUntil: "networkidle" }); await expect(page.locator("h1")).toHaveText(first.title); await checkWidth();
     await checkContrast(page, [".article-summary", ".back-link", ".reading-time", ".article-tags", ".article-toc>span", ".article-toc nav", ".article-end", ".discussion-intro", ".discussion-empty", ".next-post>p:last-child"]);
+    if (name !== "desktop") { const toc=page.locator(".mobile-toc"); await expect(toc).toBeVisible(); await toc.locator("summary").click(); await expect(toc.locator("a").first()).toBeVisible(); await toc.locator("summary").click(); }
     await page.screenshot({ path: join(output, `${name}-article.png`) });
     await page.locator(".article-body").scrollIntoViewIfNeeded();
     await page.screenshot({ path: join(output, `${name}-article-full.png`), fullPage: true });
@@ -114,7 +116,26 @@ try {
     await page.locator(".discussion").scrollIntoViewIfNeeded(); await page.screenshot({ path: join(output, `${name}-comments.png`) }); await checkWidth();
     await page.getByRole("button", { name: "删除", exact: true }).last().click(); await page.getByRole("button", { name: "确认", exact: true }).click(); await expect(page.locator(".comment-list .is-reply")).toHaveCount(0);
     await page.goto(origin + "/search?q=发布", { waitUntil: "networkidle" }); await expect(page.locator(".result-count")).toContainText("找到 4 条"); await checkWidth(); await page.screenshot({ path: join(output, `${name}-search.png`) });
-    await page.goto(origin + "/about", { waitUntil: "networkidle" }); await expect(page.locator("h1")).toBeVisible(); await checkWidth();
+    await page.goto(origin + "/search?q=" + encodeURIComponent("没有匹配项"), { waitUntil: "networkidle" });
+    await expect(page.getByText("没有找到相关的文章。", { exact: true })).toBeVisible();
+    await page.reload({ waitUntil: "networkidle" }); await expect(page.locator("#search")).toHaveValue("没有匹配项");
+    await page.getByRole("link", { name: "清除搜索", exact: true }).click(); await expect(page.locator("#search")).toHaveValue("");
+    await page.goBack({ waitUntil: "networkidle" }); await expect(page.locator("#search")).toHaveValue("没有匹配项");
+    await page.goto(origin + "/about", { waitUntil: "networkidle" }); await expect(page.locator("h1")).toBeVisible(); await checkWidth(); await page.screenshot({ path: join(output, `${name}-about.png`), fullPage: true });
+    await page.goto(origin + "/posts", { waitUntil: "networkidle" }); await page.screenshot({ path: join(output, `${name}-list.png`), fullPage: true });
+    for (const article of fixture.contents.filter(item => item.type === "POST")) {
+      await page.goto(origin + article.route, { waitUntil: "networkidle" });
+      await expect(page.locator("h1")).toHaveText(article.title);
+      const pictures = page.locator('.article-prose img[src^="/editorial/"]');
+      for (const picture of await pictures.all()) {
+        await picture.scrollIntoViewIfNeeded();
+        await expect.poll(() => picture.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
+        await page.screenshot({ path: join(output, `${name}-${article.slug}-diagram.png`) });
+      }
+      await expect(page.locator('.md-image-error')).toHaveCount(0);
+      await checkWidth();
+    }
+    await page.goto(origin + "/tags/" + encodeURIComponent(first.tags[0]), { waitUntil: "networkidle" }); await expect(page.getByRole("link", {name:"清除标签，返回文章列表"})).toBeVisible();
     await page.locator(".account-button").click(); await page.getByRole("button", { name: "退出登录" }).click(); await expect(page.locator(".account-button")).toHaveText("登录");
     assert.deepEqual(errors, []); report.push({ device: name, viewport: options.viewport, errors, writes }); await context.close();
   }
@@ -125,7 +146,7 @@ try {
     await context.route("**/api/**", route => route.fulfill({ json: route.request().url().includes("/auth/session") ? { user: null } : { items: [], total: 0, page: 0, size: 10 } }));
     const page = await context.newPage(); await page.goto(origin, { waitUntil: "networkidle" });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width}: home overflow`);
-    await page.locator(".terminal-feature").scrollIntoViewIfNeeded(); await expect(page.locator(".terminal-feature")).toHaveClass(/is-visible/);
+    await page.locator(".post-row").last().scrollIntoViewIfNeeded(); await expect(page.locator(".post-row").last()).toHaveClass(/is-visible/);
     await page.goto(origin + first.route, { waitUntil: "networkidle" });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width}: article overflow`);
     await context.close();

@@ -458,3 +458,7 @@ node scripts/record-terminal-demo.mjs
 本仓库使用 [MIT License](LICENSE)。
 
 ASCII 滚筒的圆柱变形与逐格滚动适配自 [Skyworks 的 CylinderPlane](https://github.com/shader-sweden/skyworks/blob/2eb7ad3b4b861cbfc17adebff5e9fa8c861babeb/src/components/scenes/hero/cylinder-plane.tsx)，相关来源也保留在实现注释和 [CRT 旅程说明](docs/crt-journey.md)中。
+
+### 阅读站文案与内容来源
+
+阅读站身份与首页说明在 `apps/journal/app/site.ts`；文章和固定页仍由共享内容系统提供。首页按真实文章生成列表，不需要为版式补齐专题或封面。四篇研发文章从实际问题解释实现，附有架构、渲染、发布与备份示意图；关于与近况源文只使用可核实的站点信息。来源区分、配图维护和替换注意事项见[内容编辑说明](docs/editorial-content.md)。

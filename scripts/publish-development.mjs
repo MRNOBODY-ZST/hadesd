@@ -49,9 +49,9 @@ export function editorialSettings(current = {}) {
   return {
     ...current,
     title: current.title || 'HADESD',
-    tagline: '从想法，到运行中的系统。',
-    introduction: 'Hades / 研发手记',
-    homeText: '记录这个博客如何被设计、实现和部署。\n从终端交互到静态发布，把每一个选择讲清楚。',
+    tagline: 'HADESD 博客研发笔记。',
+    introduction: 'Hades',
+    homeText: '介绍这个博客的架构、浏览器终端、静态发布与自托管。',
     navigation: [{ label: '研发手记', href: '/posts' }, { label: '关于', href: '/about' }, { label: '近况', href: '/now' }, { label: '源码', href: '/links' }],
     links: [{ label: 'HADESD · GitHub', url: 'https://github.com/MRNOBODY-ZST/hadesd', description: '博客源码、部署文档与开发记录。' }],
   };
@@ -60,7 +60,7 @@ export function editorialSettings(current = {}) {
 export function previewSnapshot(articles, now = new Date().toISOString()) {
   return {
     releaseId: 'development-preview', createdAt: now,
-    site: editorialSettings({ title: 'HADESD', heroTitle: '让想象，\n接通现实。' }),
+    site: editorialSettings({ title: 'HADESD', heroTitle: 'Hades' }),
     contents: articles.map((item, index) => ({
       ...item, id: `development-${item.slug}`, revisionId: `preview-${index}`,
       route: item.type === 'PAGE' ? `/${item.slug}` : `/posts/${item.slug}`,

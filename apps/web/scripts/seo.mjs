@@ -1,4 +1,4 @@
-import { readFile, mkdir, writeFile, readdir, rename } from "node:fs/promises";
+import { readFile, mkdir, writeFile, readdir, rename, cp } from "node:fs/promises";
 import { resolve } from "node:path";
 import { normalizeSiteOrigin } from "../../../packages/contracts/src/site-origin.mjs";
 const origin = normalizeSiteOrigin(process.env.SITE_ORIGIN);
@@ -40,6 +40,9 @@ const paths = [
   ),
 ];
 await mkdir(dir, { recursive: true });
+// Versioned illustrations belong to the checked-in development articles. Both
+// frontends run this script, so root-relative Markdown links work on either host.
+await cp(resolve(import.meta.dirname, "../../../content/development/images"), resolve(dir, "editorial"), { recursive: true });
 await writeFile(
   resolve(dir, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...new Set(paths)].map((path) => `<url><loc>${esc(origin + path)}</loc></url>`).join("")}</urlset>`,

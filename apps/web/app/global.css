@@ -1024,6 +1024,12 @@ kbd {
     animation: none;
   }
 }
+/* Text-heavy article diagrams need their labels to remain legible. */
+.terminal-shell .markdown img[src^="/editorial/"] {
+  width: 100%;
+  max-width: 760px;
+  max-height: none;
+}
 @media print {
   html[data-terminal="true"],
   html[data-terminal="true"] body {
